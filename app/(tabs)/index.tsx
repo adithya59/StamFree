@@ -1,10 +1,10 @@
+import { auth } from '@/config/firebaseConfig';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useNavigation } from 'expo-router';
+import { signOut } from 'firebase/auth';
 import React, { useCallback, useLayoutEffect, useState } from 'react';
 import { Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/config/firebaseConfig';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
@@ -51,7 +51,7 @@ export default function HomeScreen() {
 
   const renderExercises = () => (
     <View style={styles.tabContent}>
-      <Text style={styles.sectionTitle}>Let's Practice! 🎯</Text>
+      <Text style={styles.sectionTitle}>Let&apos;s Practice! 🎯</Text>
       <Animated.View style={[{ transform: [{ scale: scaleAnim }] }]}>
         <TouchableOpacity 
           style={[styles.exerciseCard, styles.breathingCard]} 
@@ -80,7 +80,7 @@ export default function HomeScreen() {
     <View style={styles.tabContent}>
       <Text style={styles.sectionTitle}>Your Amazing Progress! 🌟</Text>
       <View style={[styles.reportCard, styles.progressCard]}>
-        <Text style={styles.reportTitle}>Today's Achievements</Text>
+        <Text style={styles.reportTitle}>Today&apos;s Achievements</Text>
         <View style={styles.achievementRow}>
           <MaterialCommunityIcons name="trophy" size={24} color="#FFD700" />
           <Text style={styles.reportMetric}>3 Games Completed!</Text>

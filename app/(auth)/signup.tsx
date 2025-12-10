@@ -1,22 +1,22 @@
+import { auth, db } from '@/config/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, router } from 'expo-router';
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '@/config/firebaseConfig';
 
 export default function CreateAccountScreen() {
   const [childName, setChildName] = useState('');
@@ -96,6 +96,14 @@ export default function CreateAccountScreen() {
       // Store auth state locally (legacy/backup)
       await AsyncStorage.setItem('authUser', JSON.stringify({ email, uid: user.uid }));
       
+      // Send email verification
+      try {
+        await sendEmailVerification(user);
+        console.log('Verification email sent');
+      } catch (verifyError) {
+        console.warn('Failed to send verification email:', verifyError);
+      }
+      
       setShowSuccessModal(true);
     } catch (error: any) {
       let errorMessage = 'Failed to create account. Please try again.';
@@ -114,7 +122,7 @@ export default function CreateAccountScreen() {
 
   const handleSuccessContinue = () => {
     setShowSuccessModal(false);
-    router.replace('/(tabs)');
+    router.replace('/(auth)/email-verification');
   };
 
   return (
@@ -130,10 +138,10 @@ export default function CreateAccountScreen() {
             <Text style={styles.sectionTitle}>Child Details</Text>
             
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Child's Name *</Text>
+              <Text style={styles.label}>Child&apos;s Name *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Enter child's full name"
+                placeholder="Enter child&apos;s full name"
                 value={childName}
                 onChangeText={setChildName}
                 editable={!loading}
@@ -141,10 +149,10 @@ export default function CreateAccountScreen() {
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Child's Age *</Text>
+              <Text style={styles.label}>Child&apos;s Age *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Enter child's age"
+                placeholder="Enter child&apos;s age"
                 value={childAge}
                 onChangeText={setChildAge}
                 keyboardType="number-pad"
@@ -155,10 +163,10 @@ export default function CreateAccountScreen() {
             <Text style={styles.sectionTitle}>Parent Details</Text>
 
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Parent's Name *</Text>
+              <Text style={styles.label}>Parent&apos;s Name *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Enter parent's full name"
+                placeholder="Enter parent&apos;s full name"
                 value={parentName}
                 onChangeText={setParentName}
                 editable={!loading}
@@ -166,7 +174,7 @@ export default function CreateAccountScreen() {
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Parent's Phone Number *</Text>
+              <Text style={styles.label}>Parent&apos;s Phone Number *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Enter 10-digit phone number"
@@ -250,12 +258,14 @@ export default function CreateAccountScreen() {
                <Text style={styles.modalIcon}>🎉</Text>
             </View>
             <Text style={styles.modalTitle}>Success!</Text>
-            <Text style={styles.modalMessage}>Your account has been created successfully.</Text>
+            <Text style={styles.modalMessage}>
+              Your account has been created successfully. Please verify your email address to continue.
+            </Text>
             <TouchableOpacity
               style={styles.modalButton}
               onPress={handleSuccessContinue}
             >
-              <Text style={styles.modalButtonText}>Let's Start!</Text>
+              <Text style={styles.modalButtonText}>Verify Email</Text>
             </TouchableOpacity>
           </View>
         </View>

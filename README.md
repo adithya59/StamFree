@@ -10,7 +10,18 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npm install
    ```
 
-2. Start the app
+2. Configure Firebase env vars (create `.env`)
+
+   ```bash
+   EXPO_PUBLIC_FIREBASE_API_KEY=your_api_key
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_auth_domain
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_storage_bucket
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+   ```
+
+3. Start the app
 
    ```bash
    npx expo start
@@ -24,6 +35,36 @@ In the output, you'll find options to open the app in a
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+
+## Authentication Flows
+
+StamFree uses Firebase Authentication with email verification:
+
+### Sign Up Flow
+1. User fills signup form (child name, age, parent details, email, password)
+2. Firebase creates account with `createUserWithEmailAndPassword`
+3. Verification email sent automatically via `sendEmailVerification`
+4. User redirected to email verification screen
+5. User clicks link in email or manually checks verification status
+6. Once verified, user can access the app
+
+### Login Flow
+1. User enters email and password
+2. Firebase authenticates via `signInWithEmailAndPassword`
+3. **Email verification gate**: If email not verified, user blocked and prompted to verify
+4. Once verified, user redirected to main app tabs
+
+### Password Reset Flow
+1. User clicks "Forgot Password?" on login screen
+2. Enters email address
+3. Firebase sends password reset email via `sendPasswordResetEmail`
+4. User clicks link in email to reset password
+5. User returns to login with new password
+
+### Navigation Guards
+- Unauthenticated users automatically redirected to login
+- Unverified users blocked from accessing main app tabs
+- Auth state persisted with Firebase Auth + AsyncStorage
 
 ## Get a fresh project
 

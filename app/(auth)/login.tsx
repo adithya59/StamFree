@@ -1,5 +1,7 @@
+import { auth } from '@/config/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, router } from 'expo-router';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,8 +15,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/config/firebaseConfig';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -31,6 +31,23 @@ export default function LoginScreen() {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+
+      // Check if email is verified
+      if (!user.emailVerified) {
+        Alert.alert(
+          'Email Not Verified',
+          'Please verify your email address before logging in.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Go to Verification',
+              onPress: () => router.replace('/(auth)/email-verification'),
+            },
+          ]
+        );
+        setLoading(false);
+        return;
+      }
 
       // Store auth state for app compatibility (optional, but keeps existing logic working)
       await AsyncStorage.setItem('authUser', JSON.stringify({ email: user.email, uid: user.uid }));
@@ -100,8 +117,15 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={styles.forgotPasswordButton}
+              onPress={() => router.push('/(auth)/password-reset')}
+              disabled={loading}>
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+            </TouchableOpacity>
+
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Don't have an account? </Text>
+              <Text style={styles.footerText}>Don&apos;t have an account? </Text>
               <Link href="/(auth)/signup" asChild>
                 <TouchableOpacity disabled={loading}>
                   <Text style={styles.link}>Create Account</Text>
@@ -175,6 +199,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  forgotPasswordButton: {
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  forgotPasswordText: {
+    color: '#1a73e8',
+    fontSize: 14,
+    fontWeight: '500',
   },
   footer: {
     flexDirection: 'row',
