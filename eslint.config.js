@@ -1,10 +1,19 @@
 // https://docs.expo.dev/guides/using-eslint/
-const { defineConfig } = require('eslint/config');
-const expoConfig = require('eslint-config-expo/flat');
+import expoConfig from 'eslint-config-expo/flat.js';
+import { defineConfig } from 'eslint/config';
 
-module.exports = defineConfig([
+export default defineConfig([
   expoConfig,
   {
-    ignores: ['dist/*'],
+    // Ignore generated and vendor artifacts that should not be linted
+    ignores: [
+      'dist/**',
+      'build/**',
+      'coverage/**',
+      'node_modules/**',
+      '.expo/**',
+      '.specify/**',
+      'android/app/build/**',
+    ],
   },
 ]);

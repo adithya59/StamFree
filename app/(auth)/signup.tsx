@@ -3,19 +3,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, router } from 'expo-router';
 import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 export default function CreateAccountScreen() {
@@ -28,6 +28,25 @@ export default function CreateAccountScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [speechIssues, setSpeechIssues] = useState<Record<string, boolean>>({});
+
+  const speechIssueOptions = useMemo(
+    () => [
+      'Stuttering',
+      'Stammering',
+      'Prolongation',
+      'Blocks (silent pauses)',
+      'Cluttering',
+      'Word or syllable repetitions',
+      'Sound substitutions/distortions',
+      'Other (not listed)',
+    ],
+    []
+  );
+
+  const toggleSpeechIssue = (issue: string) => {
+    setSpeechIssues((prev) => ({ ...prev, [issue]: !prev[issue] }));
+  };
 
   const validateForm = () => {
     if (!childName || !childAge || !parentName || !parentPhone || !email || !password) {
@@ -78,6 +97,10 @@ export default function CreateAccountScreen() {
             setTimeout(() => reject(new Error('Firestore timeout')), 5000)
           );
 
+          const selectedSpeechIssues = Object.entries(speechIssues)
+            .filter(([, checked]) => checked)
+            .map(([issue]) => issue);
+
           await Promise.race([
             setDoc(doc(db, 'users', user.uid), {
               childName,
@@ -85,6 +108,7 @@ export default function CreateAccountScreen() {
               parentName,
               parentPhone,
               email,
+              speechIssues: selectedSpeechIssues,
               createdAt: new Date().toISOString(),
             }),
             timeoutPromise
@@ -184,6 +208,27 @@ export default function CreateAccountScreen() {
                 maxLength={10}
                 editable={!loading}
               />
+            </View>
+
+            <Text style={styles.sectionTitle}>Speech Challenges (optional)</Text>
+            <Text style={styles.helperText}>Select any identified patterns to tailor practice.</Text>
+            <View style={styles.chipGrid}>
+              {speechIssueOptions.map((issue) => {
+                const checked = !!speechIssues[issue];
+                return (
+                  <TouchableOpacity
+                    key={issue}
+                    style={[styles.chip, checked && styles.chipChecked]}
+                    onPress={() => toggleSpeechIssue(issue)}
+                    disabled={loading}
+                  >
+                    <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+                      {checked && <Text style={styles.checkboxMark}>✓</Text>}
+                    </View>
+                    <Text style={[styles.chipText, checked && styles.chipTextChecked]}>{issue}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <View style={styles.inputContainer}>
@@ -318,6 +363,11 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
   },
+  helperText: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginBottom: 12,
+  },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
@@ -325,6 +375,58 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: '#f9f9f9',
+  },
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#e0e7ff',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#f8f9ff',
+  },
+  chipChecked: {
+    borderColor: '#1a73e8',
+    backgroundColor: '#e8f0fe',
+  },
+  chipText: {
+    fontSize: 14,
+    color: '#2c3e50',
+    fontWeight: '700',
+  },
+  chipTextChecked: {
+    color: '#1a73e8',
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#cbd5e1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    shadowColor: '#1a73e8',
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  checkboxChecked: {
+    borderColor: '#1a73e8',
+    backgroundColor: '#1a73e8',
+  },
+  checkboxMark: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
   },
   button: {
     backgroundColor: '#1a73e8',

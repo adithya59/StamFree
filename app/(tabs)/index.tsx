@@ -1,132 +1,122 @@
-import { auth } from '@/config/firebaseConfig';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useNavigation } from 'expo-router';
-import { signOut } from 'firebase/auth';
-import React, { useCallback, useLayoutEffect, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useLayoutEffect } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+interface ExerciseTile {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  color: string;
+  route: string;
+}
+
+const exercises: ExerciseTile[] = [
+  {
+    id: 'speech-practice',
+    title: 'Speech Practice',
+    description: 'Practice sentences with target phonemes',
+    icon: 'microphone',
+    color: '#FF6B6B',
+    route: '/exercises/speech-practice',
+  },
+  {
+    id: 'breathing',
+    title: 'Breathing Exercises',
+    description: 'Learn controlled breathing techniques',
+    icon: 'lungs',
+    color: '#4ECDC4',
+    route: '/exercises/breathing-exercises',
+  },
+  {
+    id: 'word-games',
+    title: 'Word Games',
+    description: 'Fun word puzzles and games',
+    icon: 'cards-variant',
+    color: '#FFD93D',
+    route: '/exercises/word-games',
+  },
+];
 
 export default function HomeScreen() {
   const navigation = useNavigation();
-  const [activeTab, setActiveTab] = useState('exercises');
-  const scaleAnim = new Animated.Value(1);
-
-  const animatePress = () => {
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const handleLogout = useCallback(async () => {
-    try {
-      await signOut(auth);
-      await AsyncStorage.removeItem('authUser');
-    } catch (e) {
-      console.warn('Failed to clear storage or sign out', e);
-    } finally {
-      router.replace('/(auth)/login');
-    }
-  }, []);
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerShown: true,
-      headerTitle: 'StamFree AI',
-      headerRight: () => (
-        <TouchableOpacity onPress={handleLogout} style={styles.headerButton}>
-          <Text style={styles.headerButtonText}>Logout</Text>
-        </TouchableOpacity>
-      ),
+      headerShown: false,
     });
-  }, [navigation, handleLogout]);
+  }, [navigation]);
 
-  const renderExercises = () => (
-    <View style={styles.tabContent}>
-      <Text style={styles.sectionTitle}>Let&apos;s Practice! 🎯</Text>
-      <Animated.View style={[{ transform: [{ scale: scaleAnim }] }]}>
-        <TouchableOpacity 
-          style={[styles.exerciseCard, styles.breathingCard]} 
-          onPress={animatePress}>
-          <MaterialCommunityIcons name="weather-windy" size={32} color="#fff" />
-          <Text style={styles.exerciseTitle}>Breathing Games</Text>
-          <Text style={styles.exerciseDescription}>Take deep breaths with our friendly dragon! 🐉</Text>
-        </TouchableOpacity>
-      </Animated.View>
-
-      <TouchableOpacity style={[styles.exerciseCard, styles.wordCard]}>
-        <MaterialCommunityIcons name="microphone" size={32} color="#fff" />
-        <Text style={styles.exerciseTitle}>Word Fun</Text>
-        <Text style={styles.exerciseDescription}>Play with words and earn stars! ⭐</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={[styles.exerciseCard, styles.fluencyCard]}>
-        <MaterialCommunityIcons name="star-face" size={32} color="#fff" />
-        <Text style={styles.exerciseTitle}>Speech Adventure</Text>
-        <Text style={styles.exerciseDescription}>Join our magical speaking journey! 🚀</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderDailyReport = () => (
-    <View style={styles.tabContent}>
-      <Text style={styles.sectionTitle}>Your Amazing Progress! 🌟</Text>
-      <View style={[styles.reportCard, styles.progressCard]}>
-        <Text style={styles.reportTitle}>Today&apos;s Achievements</Text>
-        <View style={styles.achievementRow}>
-          <MaterialCommunityIcons name="trophy" size={24} color="#FFD700" />
-          <Text style={styles.reportMetric}>3 Games Completed!</Text>
-        </View>
-        <View style={styles.achievementRow}>
-          <MaterialCommunityIcons name="clock" size={24} color="#4CAF50" />
-          <Text style={styles.reportMetric}>25 Minutes of Fun!</Text>
-        </View>
-        <View style={styles.achievementRow}>
-          <MaterialCommunityIcons name="star" size={24} color="#FF9800" />
-          <Text style={styles.reportMetric}>Super Score: 7.5! 🎉</Text>
-        </View>
-      </View>
-    </View>
-  );
+  const handleExercisePress = (route: string) => {
+    router.push(route as any);
+  };
 
   return (
     <View style={styles.container}>
-      <View style={styles.tabBar}>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'exercises' && styles.activeTab]} 
-          onPress={() => setActiveTab('exercises')}>
-          <MaterialCommunityIcons 
-            name="rocket" 
-            size={24} 
-            color={activeTab === 'exercises' ? '#FF6B6B' : '#666'} 
-          />
-          <Text style={[styles.tabText, activeTab === 'exercises' && styles.activeTabText]}>
-            Play & Learn
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'report' && styles.activeTab]} 
-          onPress={() => setActiveTab('report')}>
-          <MaterialCommunityIcons 
-            name="chart-line" 
-            size={24} 
-            color={activeTab === 'report' ? '#FF6B6B' : '#666'} 
-          />
-          <Text style={[styles.tabText, activeTab === 'report' && styles.activeTabText]}>
-            My Progress
-          </Text>
-        </TouchableOpacity>
+      <View style={styles.header}>
+        <Text style={styles.greeting}>Welcome Back! 👋</Text>
+        <Text style={styles.subtitle}>Choose an exercise to get started</Text>
       </View>
-      <ScrollView style={styles.content} bounces={true}>
-        {activeTab === 'exercises' ? renderExercises() : renderDailyReport()}
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces
+      >
+        <View style={styles.tilesContainer}>
+          {exercises.map((exercise) => (
+            <TouchableOpacity
+              key={exercise.id}
+              style={styles.tile}
+              onPress={() => handleExercisePress(exercise.route)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconContainer, { backgroundColor: exercise.color }]}>
+                <MaterialCommunityIcons
+                  name={exercise.icon as any}
+                  size={40}
+                  color="#fff"
+                />
+              </View>
+              <Text style={styles.tileTitle}>{exercise.title}</Text>
+              <Text style={styles.tileDescription}>{exercise.description}</Text>
+              <View style={styles.tileArrow}>
+                <MaterialCommunityIcons
+                  name="arrow-right"
+                  size={20}
+                  color={exercise.color}
+                />
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <MaterialCommunityIcons
+              name="calendar-today"
+              size={24}
+              color="#1a73e8"
+            />
+            <View style={styles.statContent}>
+              <Text style={styles.statLabel}>Sessions This Week</Text>
+              <Text style={styles.statValue}>12</Text>
+            </View>
+          </View>
+
+          <View style={styles.statCard}>
+            <MaterialCommunityIcons
+              name="star"
+              size={24}
+              color="#FFD93D"
+            />
+            <View style={styles.statContent}>
+              <Text style={styles.statLabel}>Current Streak</Text>
+              <Text style={styles.statValue}>5 days</Text>
+            </View>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -137,109 +127,102 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8F9FA',
   },
-  tabBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 24,
     backgroundColor: '#fff',
-    borderBottomWidth: 2,
-    borderBottomColor: '#FFE0E0',
-    justifyContent: 'space-around',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
-  tab: {
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  greeting: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1a73e8',
+    marginBottom: 8,
   },
-  activeTab: {
-    borderBottomWidth: 3,
-    borderBottomColor: '#FF6B6B',
-  },
-  tabText: {
+  subtitle: {
     fontSize: 16,
     color: '#666',
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  activeTabText: {
-    color: '#FF6B6B',
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 24,
   },
-  content: {
-    flex: 1,
+  tilesContainer: {
+    gap: 16,
+    marginBottom: 32,
   },
-  tabContent: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 20,
-    color: '#2D3436',
-    textAlign: 'center',
-  },
-  exerciseCard: {
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 16,
-    elevation: 4,
-    alignItems: 'center',
-  },
-  breathingCard: {
-    backgroundColor: '#FF6B6B',
-  },
-  wordCard: {
-    backgroundColor: '#4ECDC4',
-  },
-  fluencyCard: {
-    backgroundColor: '#45B7D1',
-  },
-  exerciseTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginVertical: 8,
-    color: '#fff',
-  },
-  exerciseDescription: {
-    fontSize: 16,
-    color: '#fff',
-    textAlign: 'center',
-  },
-  reportCard: {
+  tile: {
     backgroundColor: '#fff',
-    padding: 20,
     borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  iconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 16,
-    elevation: 4,
   },
-  progressCard: {
-    backgroundColor: '#FFF9C4',
-  },
-  reportTitle: {
-    fontSize: 20,
+  tileTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    marginBottom: 16,
-    color: '#2D3436',
-    textAlign: 'center',
+    color: '#1F2937',
+    marginBottom: 8,
   },
-  achievementRow: {
+  tileDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  tileArrow: {
+    alignItems: 'flex-end',
+  },
+  statsContainer: {
+    gap: 12,
+  },
+  statCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  reportMetric: {
-    fontSize: 16,
-    color: '#2D3436',
-    fontWeight: '600',
+  statContent: {
+    marginLeft: 16,
+    flex: 1,
   },
-  headerButton: { 
-    paddingHorizontal: 12, 
-    paddingVertical: 6 
+  statLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 4,
   },
-  headerButtonText: { 
-    color: '#FF6B6B', 
-    fontWeight: '600' 
+  statValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
   },
 });

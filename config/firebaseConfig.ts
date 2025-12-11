@@ -1,6 +1,8 @@
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getReactNativePersistence, initializeAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -17,10 +19,13 @@ if (!firebaseConfig.apiKey) {
 
 const app = initializeApp(firebaseConfig);
 
-// For Expo/React Native with web Firebase SDK, use getAuth() directly
-// Persistence is handled automatically by AsyncStorage via expo-secure-store
-const auth = getAuth(app);
+// Initialize Auth with AsyncStorage persistence for React Native
+const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+});
 
 const db = getFirestore(app);
+const storage = getStorage(app);
 
-export { auth, db };
+export { auth, db, storage };
+
