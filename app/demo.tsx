@@ -9,12 +9,7 @@ import {
   View
 } from 'react-native';
 import ThinkingOverlay from '../components/ui/ThinkingOverlay';
-
-// ---------------- CONFIGURATION ----------------
-// REPLACE WITH YOUR LAPTOP IP
-const BACKEND_URL = 'http://10.227.4.246:5000/analyze_audio '; 
-const HEALTH_URL = 'http://10.227.4.246:5000/health'; // Ensure port matches
-// -----------------------------------------------
+import { getAnalyzeAudioUrl, getHealthUrl } from '../config/backend';
 
 export default function Demo() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -43,7 +38,7 @@ export default function Demo() {
     try {
       // Create a timeout promise
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
-      const fetchRequest = fetch(HEALTH_URL, { method: 'GET' });
+      const fetchRequest = fetch(getHealthUrl(), { method: 'GET' });
       
       // We expect a 404 is fine (means server is reachable), 
       // but ideally your flask app has a simple '/' route.
@@ -97,7 +92,7 @@ export default function Demo() {
         type: `audio/${fileType}`,
       } as any);
 
-      const response = await fetch(BACKEND_URL, {
+      const response = await fetch(getAnalyzeAudioUrl(), {
         method: 'POST',
         body: formData,
         headers: { 'Content-Type': 'multipart/form-data' },
