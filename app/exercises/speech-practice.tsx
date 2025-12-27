@@ -1,273 +1,159 @@
-import { AudioRecorder } from '@/components/audio/AudioRecorder';
-import { auth } from '@/config/firebaseConfig';
-import { getPhonemesForLevel } from '@/constants/phonemes';
-import { getNextSentence, getSentencesForLevel } from '@/constants/sentences';
-import { saveSession } from '@/services/firestore';
-import { uploadAudio } from '@/services/storage';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useNavigation } from 'expo-router';
-import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useRef, useState, useEffect } from 'react';
+import { Animated, View, Text, ImageBackground, Image, StyleSheet, TouchableOpacity, Modal } from 'react-native';
+import { startRecording, stopRecording, transcribeAudio } from '../../services/audioService';
+import { Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech'; // Ensure expo-speech is installed
 
-export default function SpeechPracticeScreen() {
-  const navigation = useNavigation();
-  const [currentLevel, setCurrentLevel] = useState(1);
-  const [completedSentenceIds, setCompletedSentenceIds] = useState<string[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+export default function TalkingTurtle() {
+  const words = ['Apple', 'Banana', 'Tiger', 'Sun']; // The word list for the level
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [feedback, setFeedback] = useState('🐢 Help the turtle reach the end of the road!');
+  const [isFinished, setIsFinished] = useState(false);
+  
+  const targetWord = words[currentIndex];
+  
+  // Turtle positioning
+  const verticalAnim = useRef(new Animated.Value(-200)).current; 
+  const scaleAnim = useRef(new Animated.Value(0.6)).current;
+  
+  // Progress Bar Width
+  const progressAnim = useRef(new Animated.Value(0)).current;
 
-  const levelSentences = useMemo(() => getSentencesForLevel(currentLevel), [currentLevel]);
-  const currentSentence = useMemo(
-    () => getNextSentence(completedSentenceIds, currentLevel),
-    [completedSentenceIds, currentLevel]
-  );
-  const unlockedPhonemes = useMemo(() => getPhonemesForLevel(currentLevel), [currentLevel]);
+  useEffect(() => {
+    // Update progress bar whenever the index changes
+    Animated.timing(progressAnim, {
+      toValue: (currentIndex / words.length) * 100,
+      duration: 500,
+      useNativeDriver: false,
+    }).start();
+  }, [currentIndex]);
 
-  const handleBack = useCallback(() => {
-    router.replace('/(tabs)');
-  }, []);
+  const handleSpeakResult = async () => {
+    const audioUri = await stopRecording();
+    if (!audioUri) return;
 
-  const handleRecorded = useCallback(
-    async (uri: string, durationMs: number) => {
-      if (!auth.currentUser || !currentSentence) return;
-      setUploading(true);
-      setMessage(null);
-      try {
-        const primaryPhoneme = currentSentence.targetPhonemes[0] ?? 'unknown';
-        const { downloadUrl, storagePath } = await uploadAudio({
-          uri,
-          uid: auth.currentUser.uid,
-          phonemeId: primaryPhoneme,
-        });
+    try {
+      const transcript = await transcribeAudio(audioUri);
+      const isCorrect = transcript.toLowerCase().includes(targetWord.toLowerCase());
 
-        await saveSession({
-          uid: auth.currentUser.uid,
-          phonemeId: primaryPhoneme,
-          durationMs,
-          storagePath,
-          downloadUrl,
-          sentenceId: currentSentence.id,
-          targetPhonemes: currentSentence.targetPhonemes,
-          level: currentLevel,
-        });
-
-        const updatedCompleted = completedSentenceIds.includes(currentSentence.id)
-          ? completedSentenceIds
-          : [...completedSentenceIds, currentSentence.id];
-
-        setCompletedSentenceIds(updatedCompleted);
-
-        const remainingInLevel = levelSentences.filter((s) => !updatedCompleted.includes(s.id)).length;
-        if (remainingInLevel === 0) {
-          const hasNextLevel = getSentencesForLevel(currentLevel + 1).length > 0;
-          if (hasNextLevel) {
-            setCurrentLevel((lvl) => lvl + 1);
-            setMessage('🎉 Level up! New phonemes unlocked.');
-          } else {
-            setMessage('✅ All practice sentences completed!');
-          }
-        } else {
-          setMessage('✅ Saved successfully!');
-        }
-      } catch (err) {
-        console.error('Upload/save failed:', err);
-        setMessage('❌ Failed to save recording');
-      } finally {
-        setUploading(false);
+      if (isCorrect) {
+        processSuccess();
+      } else {
+        setFeedback('Almost! Try saying it again slowly 🐢');
+        Speech.speak('Almost! Try saying it again slowly.'); // Turtle voice
       }
-    },
-    [completedSentenceIds, currentLevel, currentSentence, levelSentences]
-  );
+    } catch (error) {
+      setFeedback("The jungle is noisy! Try again? 🐢");
+    }
+  };
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerShown: true,
-      headerTitle: 'Speech Practice',
-      headerLeft: () => (
-        <TouchableOpacity onPress={handleBack} style={styles.headerButton}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1a73e8" />
-        </TouchableOpacity>
-      ),
+  const processSuccess = () => {
+    setFeedback('WOW! You said it! 🐢 JUMP!');
+    Speech.speak('Perfect! Watch me go!');
+
+    // Move turtle forward
+    Animated.parallel([
+      Animated.timing(verticalAnim, {
+        toValue: verticalAnim._value + 120,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: scaleAnim._value + 0.15,
+        duration: 1000,
+        useNativeDriver: true,
+      })
+    ]).start(() => {
+      if (currentIndex + 1 < words.length) {
+        setCurrentIndex(currentIndex + 1);
+      } else {
+        setIsFinished(true); // Game Complete!
+      }
     });
-  }, [navigation, handleBack]);
+  };
 
   return (
-    <View style={styles.container}>
-      <ScrollView style={styles.content} bounces>
-        <View style={styles.contentPadding}>
-          <Text style={styles.sectionTitle}>Let&apos;s Practice! 🎯</Text>
-
-          <View style={styles.progressRow}>
-            <Text style={styles.levelText}>Level {currentLevel}</Text>
-            <Text style={styles.levelText}>
-              {levelSentences.length - levelSentences.filter((s) => completedSentenceIds.includes(s.id)).length} left
-            </Text>
-          </View>
-
-          {currentSentence ? (
-            <View style={styles.sentenceCard}>
-              <Text style={styles.sentenceLabel}>Repeat this sentence:</Text>
-              <Text style={styles.sentenceText}>{currentSentence.text}</Text>
-
-              <View style={styles.phonemeTagRow}>
-                {currentSentence.targetPhonemes.map((pid) => {
-                  const ph = unlockedPhonemes.find((p) => p.id === pid);
-                  return (
-                    <View key={pid} style={styles.phonemeTag}>
-                      <Text style={styles.phonemeIpa}>{ph?.ipa ?? pid}</Text>
-                      <Text style={styles.phonemeLabel}>{ph?.label ?? ''}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-
-              <View style={styles.recorderSection}>
-                <AudioRecorder onRecorded={handleRecorded} />
-                {uploading && <Text style={styles.statusText}>Uploading...</Text>}
-                {message && <Text style={styles.statusText}>{message}</Text>}
-              </View>
-            </View>
-          ) : (
-            <View style={styles.sentenceCard}>
-              <Text style={styles.sentenceLabel}>All available sentences completed at this level.</Text>
-              <Text style={styles.sentenceText}>Great job! 🎉</Text>
-            </View>
-          )}
-
-          <Text style={styles.subtitle}>Unlocked phonemes:</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.phonemeScroll}
-            contentContainerStyle={styles.phonemeScrollContent}
-          >
-            {unlockedPhonemes.map((p) => (
-              <View key={p.id} style={[styles.phonemeChip, styles.phonemeChipSelected]}>
-                <Text style={styles.phonemeIpa}>{p.ipa}</Text>
-                <Text style={styles.phonemeLabel}>{p.label}</Text>
-              </View>
-            ))}
-          </ScrollView>
+    <ImageBackground source={require('../../assets/images/jungle.jpg')} style={styles.container}>
+      
+      {/* Progress Bar at Top */}
+      <View style={styles.progressWrapper}>
+        <View style={styles.progressBarContainer}>
+          <Animated.View style={[styles.progressBarFill, { width: progressAnim.interpolate({
+            inputRange: [0, 100],
+            outputRange: ['0%', '100%']
+          }) }]} />
         </View>
-      </ScrollView>
-    </View>
+        <Text style={styles.progressText}>Step {currentIndex + 1} of {words.length}</Text>
+      </View>
+
+      <View style={styles.header}>
+        <Text style={styles.instruction}>Can you say...</Text>
+        <Text style={styles.targetWordText}>{targetWord}</Text>
+      </View>
+
+      <Animated.View style={[
+        styles.turtleContainer, 
+        { transform: [{ translateY: verticalAnim }, { scale: scaleAnim }] }
+      ]}>
+        <Image source={require('../../assets/images/turtle.png')} style={styles.turtle} />
+      </Animated.View>
+
+      <View style={styles.feedbackContainer}>
+        <Text style={styles.feedbackText}>{feedback}</Text>
+      </View>
+
+      <View style={styles.bottomControls}>
+        <TouchableOpacity style={[styles.roundButton, styles.speakBtn]} onPress={startRecording}>
+          <Ionicons name="mic" size={40} color="white" />
+          <Text style={styles.btnLabel}>SPEAK</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.roundButton, styles.doneBtn]} onPress={handleSpeakResult}>
+          <Ionicons name="checkmark-done" size={40} color="white" />
+          <Text style={styles.btnLabel}>DONE</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Success Modal */}
+      <Modal visible={isFinished} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalEmoji}>🏆</Text>
+            <Text style={styles.modalTitle}>Level Complete!</Text>
+            <Text style={styles.modalSub}>The turtle made it home!</Text>
+            <TouchableOpacity style={styles.modalBtn} onPress={() => setIsFinished(false)}>
+              <Text style={styles.modalBtnText}>Play Again</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  content: {
-    flex: 1,
-  },
-  contentPadding: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 20,
-    color: '#2D3436',
-    textAlign: 'center',
-  },
-  headerButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  subtitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-    color: '#2D3436',
-  },
-  phonemeScroll: {
-    marginBottom: 20,
-  },
-  phonemeScrollContent: {
-    paddingHorizontal: 4,
-  },
-  phonemeChip: {
-    marginHorizontal: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#fff',
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  phonemeChipSelected: {
-    borderColor: '#FF6B6B',
-    backgroundColor: '#FFE0E0',
-  },
-  phonemeIpa: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  phonemeLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  recorderSection: {
-    marginTop: 12,
-  },
-  statusText: {
-    marginTop: 12,
-    textAlign: 'center',
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  progressRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  levelText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#2D3436',
-  },
-  sentenceCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 12,
-  },
-  sentenceLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  sentenceText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  phonemeTagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  phonemeTag: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: '#FFE0E0',
-    borderColor: '#FF6B6B',
-    borderWidth: 1,
-    minWidth: 90,
-    alignItems: 'center',
-  },
+  container: { flex: 1, alignItems: 'center', justifyContent: 'space-between' },
+  progressWrapper: { width: '80%', marginTop: 50, alignItems: 'center' },
+  progressBarContainer: { height: 15, width: '100%', backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 10, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: '#FFD700', borderRadius: 10 },
+  progressText: { color: 'white', marginTop: 5, fontWeight: 'bold' },
+  header: { marginTop: 20, alignItems: 'center' },
+  instruction: { color: 'white', fontSize: 18, fontWeight: '600' },
+  targetWordText: { fontSize: 55, fontWeight: 'bold', color: '#FFF' },
+  turtleContainer: { position: 'absolute', top: '40%' },
+  turtle: { width: 150, height: 150, resizeMode: 'contain' },
+  feedbackContainer: { backgroundColor: 'rgba(255,255,255,0.8)', padding: 15, borderRadius: 25, width: '85%', marginBottom: 20 },
+  feedbackText: { color: '#2E7D32', fontSize: 18, textAlign: 'center', fontWeight: 'bold' },
+  bottomControls: { flexDirection: 'row', justifyContent: 'space-evenly', width: '100%', marginBottom: 40 },
+  roundButton: { width: 90, height: 90, borderRadius: 45, justifyContent: 'center', alignItems: 'center', elevation: 8 },
+  speakBtn: { backgroundColor: '#4CAF50' },
+  doneBtn: { backgroundColor: '#FF9800' },
+  btnLabel: { color: 'white', fontWeight: 'bold', fontSize: 12, marginTop: 2 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { backgroundColor: 'white', padding: 40, borderRadius: 30, alignItems: 'center' },
+  modalEmoji: { fontSize: 60 },
+  modalTitle: { fontSize: 28, fontWeight: 'bold', marginVertical: 10 },
+  modalSub: { fontSize: 18, color: '#666', marginBottom: 20 },
+  modalBtn: { backgroundColor: '#4CAF50', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 20 },
+  modalBtnText: { color: 'white', fontWeight: 'bold', fontSize: 18 }
 });

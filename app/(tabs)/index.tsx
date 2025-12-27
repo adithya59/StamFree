@@ -3,6 +3,7 @@ import { router, useNavigation } from 'expo-router';
 import React, { useLayoutEffect } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+
 interface ExerciseTile {
   id: string;
   title: string;
@@ -16,22 +17,22 @@ const exercises: ExerciseTile[] = [
   {
     id: 'speech-practice',
     title: 'Speech Practice',
-    description: 'Practice sentences with target phonemes',
+    description: 'Practice sentences with TalkingTurtle',
     icon: 'microphone',
     color: '#FF6B6B',
-    route: '/exercises/speech-practice',
+    route: 'exercises/speech-practice',
   },
   {
     id: 'breathing',
-    title: 'Breathing Exercises',
+    title: 'BreathingBalloon',
     description: 'Learn controlled breathing techniques',
     icon: 'lungs',
     color: '#4ECDC4',
-    route: '/exercises/breathing-exercises',
+    route: 'exercises/breathing-exercises',
   },
   {
-    id: 'word-games',
-    title: 'Word Games',
+    id: 'OneTapWord',
+    title: 'OneTapWord',
     description: 'Fun word puzzles and games',
     icon: 'cards-variant',
     color: '#FFD93D',
@@ -117,6 +118,8 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
+
+       
       </ScrollView>
     </View>
   );
