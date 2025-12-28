@@ -1,7 +1,7 @@
 /**
  * Snake Game Screen
  * 
- * Full game screen integrating SnakeGameEngine, SnakePath, and SnakeVisualizer.
+ * Full game screen integrating SnakeGameEngine and SnakePath.
  * Implements core gameplay loop with progress indicator, controls, and post-game flow.
  * 
  * Related: FR-001 through FR-020, US1
@@ -13,83 +13,122 @@ import { PauseOverlay } from '@/components/snake/PauseOverlay';
 import { RetryModal } from '@/components/snake/RetryModal';
 import { SnakeGameEngine } from '@/components/snake/SnakeGameEngine';
 import { SnakePath } from '@/components/snake/SnakePath';
-import { SnakeVisualizer } from '@/components/snake/SnakeVisualizer';
 import { SuccessModal } from '@/components/snake/SuccessModal';
-import { auth } from '@/config/firebaseConfig';
+import { isVoicedPhoneme } from '@/constants/phonemes';
 import { SNAKE_CONFIG } from '@/constants/snakeConfig';
 import type { GameMetrics } from '@/hooks/useSnakeGame';
-import { analyzeSnakeAudio } from '@/services/snakeAnalysis';
-import {
-  TIER_UNLOCK_THRESHOLDS,
-  calculateXpReward,
-  getInstructionText,
-  getNextLevel,
-  getSnakeLevel,
-  getSnakeLevelsByTier,
-  getUserSnakeProgress,
-  saveSnakeProgress,
-  type SnakeLevel,
-} from '@/services/snakeProgression';
+import { useSnakeSession } from '@/hooks/useSnakeSession';
+import { getInstructionText } from '@/services/snakeProgression';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, BackHandler, Easing, ImageBackground, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+const backgroundImage = require('@/assets/images/jungle-background.png');
+
+type PressableScaleButtonProps = React.PropsWithChildren<{
+  disabled?: boolean;
+  onPress?: () => void | Promise<void>;
+  style?: any;
+  testID?: string;
+  accessibilityLabel?: string;
+}>;
+
+const PressableScaleButton: React.FC<PressableScaleButtonProps> = ({
+  disabled,
+  onPress,
+  style,
+  children,
+  testID,
+  accessibilityLabel,
+}) => {
+  const scale = React.useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = useCallback(() => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: 0.96,
+      speed: 18,
+      bounciness: 8,
+      useNativeDriver: true,
+    }).start();
+  }, [disabled, scale]);
+
+  const handlePressOut = useCallback(() => {
+    Animated.spring(scale, {
+      toValue: 1,
+      speed: 18,
+      bounciness: 8,
+      useNativeDriver: true,
+    }).start();
+  }, [scale]);
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={onPress}
+        disabled={disabled}
+        style={style}
+        testID={testID}
+        accessibilityLabel={accessibilityLabel}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+const useHaptics = () => {
+  const light = useCallback(() => {
+    Haptics.selectionAsync().catch(() => undefined);
+  }, []);
+
+  const medium = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+  }, []);
+
+  const success = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+  }, []);
+
+  const warning = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
+  }, []);
+
+  return { light, medium, success, warning };
+};
 
 export default function SnakeGameScreen() {
   const navigation = useNavigation();
   const params = useLocalSearchParams();
-  const [level, setLevel] = useState<SnakeLevel | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [userProgress, setUserProgress] = useState<any>(null);
+  const { light: hapticLight, medium: hapticMedium, success: hapticSuccess, warning: hapticWarning } = useHaptics();
+  const readyToastOpacity = React.useRef(new Animated.Value(0)).current;
 
-  // Load level from params or Firestore
-  useEffect(() => {
-    const loadLevel = async () => {
-      setLoading(true);
-      try {
-        if (!auth.currentUser) {
-          throw new Error('User not authenticated');
-        }
+  // Memoize error handler to prevent infinite loop in useSnakeSession
+  const handleSessionError = React.useCallback((error: Error) => {
+    console.error('[SnakeGame] Session error:', error);
+    Alert.alert('Error', 'Failed to load level. Returning to menu.');
+    router.back();
+  }, []);
 
-        // Load user progress for XP tracking
-        const progress = await getUserSnakeProgress(auth.currentUser.uid);
-        setUserProgress(progress);
-
-        // Load level definition
-        let levelData: SnakeLevel | null = null;
-        if (params.levelId) {
-          levelData = await getSnakeLevel(params.levelId as string);
-        }
-
-        if (!levelData) {
-          // Adaptive default: pick first incomplete level in current tier
-          const tierLevels = await getSnakeLevelsByTier(progress.currentTier as 1 | 2 | 3);
-          const incomplete = tierLevels.find((lvl) => !progress.completedLevels.includes(lvl.levelId));
-          levelData = incomplete || tierLevels[0] || {
-            levelId: 'tier1_level1_word',
-            tier: 1,
-            type: 'word',
-            targetPhonemes: ['M'],
-            targetDurationSec: 2.0,
-            allowPauses: false,
-            maxPauseDuration: 0.5,
-            xpReward: 10,
-            contentExample: 'Mmmmm',
-          };
-        }
-
-        setLevel(levelData);
-      } catch (error) {
-        console.error('[SnakeGame] Error loading level:', error);
-        Alert.alert('Error', 'Failed to load level. Returning to menu.');
-        router.back();
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadLevel();
-  }, [params.levelId]);
+  // Use Brain logic hook for level management
+  const {
+    level,
+    userProgress,
+    isLoading: loading,
+    isAnalyzing,
+    loadLevel,
+    completeLevel,
+    handleFailure,
+  } = useSnakeSession({
+    levelId: params.levelId as string | undefined,
+    onError: handleSessionError,
+  });
 
   const [gameStarted, setGameStarted] = useState(false);
   const [gameCompleted, setGameCompleted] = useState(false);
@@ -100,22 +139,28 @@ export default function SnakeGameScreen() {
   const [showPauseOverlay, setShowPauseOverlay] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [optimisticStars, setOptimisticStars] = useState<number>(3);
+  const [finalStars, setFinalStars] = useState<number | undefined>(undefined);
+  const [displayFeedback, setDisplayFeedback] = useState<string>("Great job! We're analyzing your sound...");
+  const [earnedXp, setEarnedXp] = useState<number | undefined>(undefined);
   const [completionReason, setCompletionReason] = useState<'win' | 'timeout' | 'manual' | 'silent'>('win');
+  const engineResetRef = React.useRef<(() => void) | null>(null);
+  const pathSeedRef = React.useRef<number>(0);
+  const [pathSeed, setPathSeed] = useState<number>(0);
+
+  const isVoicedTarget = level ? isVoicedPhoneme(level.targetPhonemes?.[0]) : false;
+  const speechProb = analysisResult?.aiResult?.confidence as number | undefined; // Overall performance confidence
+  const voicedDetected = analysisResult?.aiResult?.metrics?.voiced_detected as boolean | undefined;
 
   // Header back button
   React.useLayoutEffect(() => {
     navigation.setOptions({
-      headerShown: true,
-      headerTitle: 'Snake Sound Trail',
-      headerLeft: () => (
-        <TouchableOpacity onPress={handleBack} style={styles.headerButton}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1a73e8" />
-        </TouchableOpacity>
-      ),
+      headerShown: false,
     });
   }, [navigation]);
 
   const handleBack = useCallback(() => {
+    hapticLight();
     if (gameStarted && !gameCompleted) {
       Alert.alert(
         'Leave Game?',
@@ -128,54 +173,82 @@ export default function SnakeGameScreen() {
     } else {
       router.back();
     }
-  }, [gameStarted, gameCompleted]);
+  }, [gameStarted, gameCompleted, hapticLight]);
 
   const handleWin = useCallback((metrics: GameMetrics) => {
     console.log('[SnakeGame] Win!', metrics);
+    hapticSuccess();
     setGameCompleted(true);
     setFinalMetrics(metrics);
     setCompletionReason('win');
     setShowRetryModal(false);
     setShowConfetti(true);
-  }, []);
+    // Show 0 stars initially while analyzing
+    setOptimisticStars(0);
+    setFinalStars(undefined);
+    setDisplayFeedback('🎉 You did it! Let me listen to your amazing voice...');
+    // Don't show modal yet - wait for confetti to finish
+    setShowSuccessModal(false);
+  }, [hapticSuccess]);
 
-  const analyzeAndShowResult = useCallback(
-    async (uri: string, metrics: GameMetrics) => {
+  // Analyze after win if audio available
+  useEffect(() => {
+    if (completionReason !== 'win' || !finalMetrics || !audioUri) return;
+
+    const runAnalysis = async () => {
       try {
-        const promptPhoneme = level?.targetPhonemes?.[0];
-        const result = await analyzeSnakeAudio(uri, metrics, promptPhoneme);
-        if (result) {
-          setAnalysisResult(result);
-          return result;
+        const result = await completeLevel(finalMetrics, audioUri);
+        setOptimisticStars(result.optimisticStars);
+
+        // Wait for AI analysis in background
+        const analysisData = await result.analysisPromise;
+        if (analysisData) {
+          setFinalStars(analysisData.aiResult?.stars ?? result.optimisticStars);
+          setDisplayFeedback(
+            analysisData.aiResult?.feedback ??
+              'Great effort! Let\'s analyze this one next time.'
+          );
+          setEarnedXp(analysisData.xp);
+          setAnalysisResult(analysisData);
         }
       } catch (error) {
         console.error('[SnakeGame] Analysis error:', error);
+        const fallback = {
+          stars: 1,
+          feedback: 'Great effort! Let\'s analyze this one next time.',
+        };
+        setFinalStars(fallback.stars);
+        setDisplayFeedback(fallback.feedback);
       }
+    };
 
-      // Fallback when analysis is unavailable
-      const fallback = {
-        stars: 2,
-        feedback: 'Great effort! Let\'s analyze this one next time.',
-        confidence: 0,
-      };
-      setAnalysisResult(fallback);
-      return fallback;
-    },
-    [level]
-  );
+    runAnalysis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completionReason, finalMetrics, audioUri]);
 
   const handleTimeout = useCallback((metrics: GameMetrics) => {
     console.log('[SnakeGame] Timeout!', metrics);
+    hapticWarning();
     setGameCompleted(true);
     setFinalMetrics(metrics);
     setCompletionReason('timeout');
     setShowRetryModal(true);
-  }, []);
+  }, [hapticWarning]);
 
   const handleRecordingStop = useCallback((uri: string | null) => {
     console.log('[SnakeGame] Recording stopped:', uri);
     setAudioUri(uri);
   }, []);
+
+  const triggerReadyToast = useCallback(() => {
+    readyToastOpacity.stopAnimation?.();
+    readyToastOpacity.setValue(0);
+    Animated.sequence([
+      Animated.timing(readyToastOpacity, { toValue: 1, duration: 160, useNativeDriver: true, easing: Easing.out(Easing.cubic) }),
+      Animated.delay(900),
+      Animated.timing(readyToastOpacity, { toValue: 0, duration: 220, useNativeDriver: true, easing: Easing.in(Easing.cubic) }),
+    ]).start();
+  }, [readyToastOpacity]);
 
   const handleAudioError = useCallback((error: Error) => {
     console.error('[SnakeGame] Audio error:', error);
@@ -214,122 +287,107 @@ export default function SnakeGameScreen() {
     setShowConfetti(false);
     setAnalysisResult(null);
     setShowPauseOverlay(false);
+    setCompletionReason('win');
+    pathSeedRef.current += 1;
+    setPathSeed(pathSeedRef.current);
+    engineResetRef.current?.();
   }, []);
-
-  // When we have a win + metrics, run analysis (if audio is present) then show success modal
-  useEffect(() => {
-    if (completionReason !== 'win' || !finalMetrics) return;
-
-    const run = async () => {
-      if (audioUri) {
-        await analyzeAndShowResult(audioUri, finalMetrics);
-      } else {
-        setAnalysisResult({
-          stars: 2,
-          feedback: 'Great effort! Try once more for a smoother sound.',
-          confidence: 0,
-        });
-      }
-      setShowSuccessModal(true);
-    };
-
-    run();
-  }, [completionReason, finalMetrics, audioUri, analyzeAndShowResult]);
 
   const handlePause = useCallback(() => {
+    hapticLight();
     setShowPauseOverlay(true);
-  }, []);
+  }, [hapticLight]);
 
   const handleResumePause = useCallback(() => {
+    hapticLight();
     setShowPauseOverlay(false);
-  }, []);
+  }, [hapticLight]);
 
   const handlePauseQuit = useCallback(() => {
+    hapticMedium();
     setShowPauseOverlay(false);
     setGameStarted(false);
     setGameCompleted(true);
     router.back();
-  }, []);
+  }, [hapticMedium]);
 
   const handleContinue = useCallback(() => {
     setShowSuccessModal(false);
-    
-    // Save progress and get next level (T028, T029)
-    if (!auth.currentUser || !level || !analysisResult) {
+
+    if (!level || !analysisResult) {
       router.back();
       return;
     }
 
-    const saveAndNavigate = async () => {
-      try {
-        // Calculate XP reward based on stars; penalize mismatch if backend reported it
-        let xpReward = calculateXpReward(level.xpReward, analysisResult.stars, finalMetrics?.completionPercentage || 0);
-        const phonemeMatch = analysisResult?.metrics?.phoneme_match;
-        if (phonemeMatch === false) {
-          xpReward = Math.round(xpReward * SNAKE_CONFIG.XP_MISMATCH_MULTIPLIER);
-        }
-        
-        // Save progress to Firestore
-        const updatedProgress = await saveSnakeProgress(
-          auth.currentUser!.uid,
-          level.levelId,
-          analysisResult.stars,
-          xpReward
-        );
+    const nextLevel = analysisResult.nextLevel;
 
-        if (!updatedProgress) {
-          throw new Error('Failed to save progress');
-        }
+    if (nextLevel) {
+      // Reload with new level instead of router.push (avoids stack buildup)
+      pathSeedRef.current += 1;
+      setPathSeed(pathSeedRef.current);
+      setGameStarted(false);
+      setGameCompleted(false);
+      setFinalMetrics(null);
+      setAudioUri(null);
+      setShowSuccessModal(false);
+      setShowRetryModal(false);
+      setShowConfetti(false);
+      setAnalysisResult(null);
+      loadLevel(nextLevel.levelId);
+    } else {
+      // No more levels - go back
+      router.back();
+    }
+  }, [level, analysisResult, loadLevel]);
 
-        // Get next level
-        const nextLevel = await getNextLevel(level, updatedProgress);
+  const handleCloseSuccessModal = useCallback(() => {
+    setShowSuccessModal(false);
+    router.back();
+  }, []);
 
-        if (nextLevel) {
-          // Auto-load next level
-          Alert.alert(
-            '🎉 Level Complete!',
-            `You earned ${xpReward} XP! Ready for the next level?`,
-            [
-              { text: 'Back', style: 'cancel', onPress: () => router.back() },
-              {
-                text: 'Next Level',
-                style: 'default',
-                onPress: () => {
-                  router.push({
-                    pathname: '/exercises/snake-game',
-                    params: {
-                      levelId: nextLevel.levelId,
-                      tier: nextLevel.tier,
-                      levelType: nextLevel.type,
-                      prompt: nextLevel.contentExample,
-                      targetDuration: nextLevel.targetDurationSec,
-                      targetPhonemes: nextLevel.targetPhonemes.join(','),
-                    },
-                  });
-                },
-              },
-            ]
-          );
-        } else {
-          // No next level available
-          Alert.alert(
-            '🏆 Wow!',
-            'You\'ve unlocked all available levels! Keep practicing to improve your skills.',
-            [{ text: 'Back', onPress: () => router.back() }]
-          );
-        }
-      } catch (error) {
-        console.error('[SnakeGame] Error saving progress:', error);
-        Alert.alert('Error', 'Failed to save progress. Please try again.');
-        router.back();
-      }
-    };
+  // Handle hardware back button when success modal is visible
+  useEffect(() => {
+    if (!showSuccessModal) return;
 
-    saveAndNavigate();
-  }, [level, analysisResult, finalMetrics]);
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleCloseSuccessModal();
+      return true; // Prevent default behavior
+    });
+
+    return () => backHandler.remove();
+  }, [showSuccessModal, handleCloseSuccessModal]);
+
+  // Subtle entrance animation for header and cards
+  const introAnim = React.useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(introAnim, {
+      toValue: 1,
+      duration: 450,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [introAnim]);
+
+  const headerEntranceStyle = useMemo(() => ({
+    opacity: introAnim,
+    transform: [
+      {
+        translateY: introAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }),
+      },
+    ],
+  }), [introAnim]);
+
+  const cardEntranceStyle = useMemo(() => ({
+    opacity: introAnim,
+    transform: [
+      {
+        translateY: introAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }),
+      },
+    ],
+  }), [introAnim]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {loading && (
         <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
           <ActivityIndicator size="large" color="#1a73e8" />
@@ -338,20 +396,6 @@ export default function SnakeGameScreen() {
 
       {!loading && level && (
         <>
-          {/* T025: Success Modal with stars and AI feedback */}
-          {analysisResult && finalMetrics && (
-            <SuccessModal
-              visible={showSuccessModal}
-              gameMetrics={finalMetrics}
-              stars={analysisResult.stars}
-              feedback={analysisResult.feedback}
-              xpReward={level.xpReward}
-              totalXp={userProgress?.totalXP || 0}
-              onContinue={handleContinue}
-              onRetry={handleRetry}
-            />
-          )}
-
           {/* T027: Retry Modal with encouragement */}
           {completionReason !== 'win' && (
             <RetryModal
@@ -382,11 +426,40 @@ export default function SnakeGameScreen() {
             />
           )}
 
-          {/* T024: Confetti Animation on win */}
-          {showConfetti && (
-            <ConfettiAnimation duration={3000} />
+          {/* T025: Success Modal with stars and AI feedback (optimistic → final) */}
+          {finalMetrics && (
+            <SuccessModal
+              visible={showSuccessModal}
+              gameMetrics={finalMetrics}
+              stars={optimisticStars}
+              onClose={handleCloseSuccessModal}
+              finalStars={finalStars}
+              isLoading={isAnalyzing}
+              feedback={displayFeedback}
+              xpReward={earnedXp ?? level.xpReward}
+              totalXp={userProgress?.totalXP || 0}
+              phonemeMatch={analysisResult?.aiResult?.metrics?.phoneme_match as boolean | undefined}
+              speechProb={speechProb}
+              voicedDetected={voicedDetected}
+              speechThreshold={SNAKE_CONFIG.SPEECH_PROB_MIN}
+              isVoicedTarget={isVoicedTarget}
+              onContinue={handleContinue}
+              onRetry={handleRetry}
+            />
           )}
 
+          {/* Confetti Animation on win */}
+          {showConfetti && (
+            <ConfettiAnimation
+              duration={3000}
+              onComplete={() => {
+                setShowConfetti(false);
+                setShowSuccessModal(true);
+              }}
+            />
+          )}
+
+          {/* GAME VIEWPORT CARD */}
           <SnakeGameEngine
             pathLength={100}
             levelConfig={{
@@ -394,159 +467,59 @@ export default function SnakeGameScreen() {
               allowPauses: level.allowPauses,
               maxPauseDuration: level.maxPauseDuration,
             }}
+            voicingRequired={isVoicedTarget}
             onWin={handleWin}
             onTimeout={handleTimeout}
             onRecordingStop={handleRecordingStop}
             onAudioError={handleAudioError}
-            enablePerfTracking={__DEV__} // Enable in dev mode only
-      >
-        {({
-          gameState,
-          completionPercentage,
-          currentAmplitude,
-          isRunning,
-          isPaused,
-          start,
-          stop,
-          pause,
-          resume,
-          reset,
-          hasPermission,
-          perfStats,
-        }) => (
-          <View style={styles.gameContainer}>
-            {/* Progress Indicator - FR-018 */}
-            <View style={styles.progressContainer}>
-              <Text style={styles.progressLabel}>
-                Tier {level.tier} • {level.type.charAt(0).toUpperCase() + level.type.slice(1)}
-              </Text>
-              <Text style={styles.progressPercentage}>
-                {Math.round(completionPercentage)}%
-              </Text>
-            </View>
+            enablePerfTracking={__DEV__}
+          >
+            {({
+              gameState,
+              completionPercentage,
+              currentAmplitude,
+              isRunning,
+              isPaused,
+              start,
+              stop,
+              pause,
+              resume,
+              reset,
+              hasPermission,
+              perfStats,
+            }) => (
+              <View style={{ flex: 1, flexDirection: 'column' }}>
+                {/* FLOATING HEADER - Pause Button & Level Pill */}
+                <Animated.View 
+                  style={[styles.floatingHeader, headerEntranceStyle]} 
+                  pointerEvents="box-none"
+                >
+                  {/* Back Button (Top Left) - Always accessible */}
+                  <PressableScaleButton
+                    style={styles.backButton}
+                    onPress={showSuccessModal ? handleCloseSuccessModal : handleBack}
+                    accessibilityLabel="Back"
+                  >
+                    <MaterialCommunityIcons name="arrow-left" size={24} color="#1a73e8" />
+                  </PressableScaleButton>
 
-            {/* Snake Path with Avatar - FR-001, FR-003, FR-015, FR-016 */}
-            <View style={styles.pathContainer}>
-              <SnakePath
-                position={gameState.position / 100}
-                isMoving={isRunning && !isPaused}
-                showSleepOverlay={gameState.showSleepOverlay}
-                pathLength={100}
-                showBackground={true}
-                triggerAppleEat={gameState.isWon}
-              />
-
-              {/* Corner HUD badges to avoid covering the apple */}
-              <View style={styles.hudContainer} pointerEvents="none">
-                <View style={[styles.hudBubble, styles.hudTopLeft]}>
-                  <Text style={styles.hudLabel}>Tier {userProgress?.currentTier || level.tier}</Text>
-                  <Text style={styles.hudValue}>{level.targetPhonemes.join(', ')}</Text>
-                </View>
-                <View style={[styles.hudBubble, styles.hudTopRight]}>
-                  <Text style={styles.hudLabel}>Next Tier</Text>
-                  <Text style={styles.hudValue}>
-                    {(() => {
-                      const totalXp = userProgress?.totalXP || 0;
-                      const nextTier = Math.min(3, (userProgress?.currentTier || level.tier) + 1) as 1 | 2 | 3;
-                      const needed = Math.max(0, TIER_UNLOCK_THRESHOLDS[nextTier] - totalXp);
-                      return needed > 0 ? `${needed} XP` : 'Unlocked';
-                    })()}
-                  </Text>
-                </View>
-              </View>
-              
-              {/* Prompt overlay when not started */}
-              {!gameStarted && !gameCompleted && (
-                <View style={styles.promptOverlay}>
-                  <View style={styles.promptCard}>
-                    <Text style={styles.promptTitle}>Say this sound:</Text>
-                    <Text style={styles.promptPhoneme}>{level.contentExample}</Text>
-                    <Text style={styles.promptInstruction}>
-                      {getInstructionText(level)} for {level.targetDurationSec} seconds!
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Sleep prompt overlay - FR-015 */}
-              {gameState.showSleepOverlay && isRunning && (
-                <View style={styles.sleepPromptOverlay}>
-                  <View style={styles.sleepPromptCard}>
-                    <Text style={styles.sleepPromptEmoji}>😴</Text>
-                    <Text style={styles.sleepPromptText}>
-                      Wake up the snake! Keep saying your sound
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Completion overlay */}
-              {gameCompleted && finalMetrics && completionReason !== 'win' && (
-                <View style={styles.completionOverlay}>
-                  <View style={styles.completionCard}>
-                    <Text style={styles.completionTitle}>
-                      {finalMetrics.completionPercentage >= 100 ? '🎉 Well Done!' : '⏱️ Time\'s Up!'}
-                    </Text>
-                    <Text style={styles.completionStats}>
-                      Duration: {finalMetrics.durationAchieved.toFixed(1)}s / {finalMetrics.targetDuration}s
-                    </Text>
-                    <Text style={styles.completionStats}>
-                      Progress: {Math.round(finalMetrics.completionPercentage)}%
-                    </Text>
-                    {finalMetrics.pauseCount > 0 && (
-                      <Text style={styles.completionStats}>
-                        Pauses: {finalMetrics.pauseCount} ({finalMetrics.totalPauseDuration.toFixed(1)}s)
+                  {/* Level & Progress Pill (Top Center) */}
+                  <View style={styles.levelGroup}>
+                    <View style={styles.levelPill}>
+                      <Text style={styles.levelPillText}>
+                        Level {level.tier}-{level.levelId.split('_')[2] || '1'}
                       </Text>
-                    )}
-                    
-                    <View style={styles.completionButtons}>
-                      <TouchableOpacity
-                        style={[styles.button, styles.buttonSecondary]}
-                        onPress={handleRetry}
-                      >
-                        <Text style={styles.buttonSecondaryText}>Try Again</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.button, styles.buttonPrimary]}
-                        onPress={() => router.back()}
-                      >
-                        <Text style={styles.buttonPrimaryText}>Done</Text>
-                      </TouchableOpacity>
+                      <Text style={styles.levelPillSubtext}>
+                        {Math.round((userProgress?.totalXP || 0) / 100)}★
+                      </Text>
                     </View>
                   </View>
-                </View>
-              )}
-            </View>
 
-            {/* Bar Visualizer - FR-005 */}
-            <SnakeVisualizer
-              amplitude={currentAmplitude}
-              threshold={SNAKE_CONFIG.AMPLITUDE_THRESHOLD}
-              showThreshold={true}
-            />
-
-            {/* Control Buttons */}
-            <View style={styles.controlsContainer}>
-
-              {!gameStarted && !gameCompleted && (
-                <TouchableOpacity
-                  style={[styles.button, styles.buttonPrimary, styles.buttonLarge, !hasPermission && styles.buttonDisabled]}
-                  onPress={async () => {
-                    setGameStarted(true);
-                    await start();
-                  }}
-                  disabled={!hasPermission}
-                >
-                  <MaterialCommunityIcons name="play" size={32} color="#FFFFFF" />
-                  <Text style={styles.buttonPrimaryText}>Start</Text>
-                </TouchableOpacity>
-              )}
-
-              {isRunning && !gameCompleted && (
-                <View style={styles.gameControls}>
-                  <TouchableOpacity
-                    style={[styles.button, styles.buttonSecondary]}
-                    onPress={() => {
+                  {/* Pause Button (Top Right) */}
+                  <PressableScaleButton
+                    style={styles.pauseButton}
+                    onPress={async () => {
+                      hapticLight();
                       if (isPaused) {
                         resume();
                         handleResumePause();
@@ -555,57 +528,174 @@ export default function SnakeGameScreen() {
                         handlePause();
                       }
                     }}
+                    disabled={!isRunning || gameCompleted}
+                    accessibilityLabel={isPaused ? 'Resume' : 'Pause'}
                   >
                     <MaterialCommunityIcons
                       name={isPaused ? 'play' : 'pause'}
                       size={24}
-                      color="#1a73e8"
+                      color="#FFFFFF"
                     />
-                    <Text style={styles.buttonSecondaryText}>
-                      {isPaused ? 'Resume' : 'Pause'}
-                    </Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[styles.button, styles.buttonDanger]}
-                    onPress={async () => {
-                      await stop();
-                      handleRetry();
-                    }}
+                  </PressableScaleButton>
+                </Animated.View>
+
+                {/* GAME VIEWPORT CARD */}
+                <Animated.View style={[styles.gameViewportCard, cardEntranceStyle]}>
+                  {(() => {
+                    engineResetRef.current = reset;
+                    return null;
+                  })()}
+
+                  {/* Background with Snake Path */}
+                  <ImageBackground
+                    source={backgroundImage}
+                    style={styles.gameBackground}
+                    resizeMode="cover"
                   >
-                    <MaterialCommunityIcons name="stop" size={24} color="#FFFFFF" />
-                    <Text style={styles.buttonPrimaryText}>Stop</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                    {/* Snake Path with Avatar - FR-001, FR-003, FR-015, FR-016 */}
+                    <SnakePath
+                      position={gameState.position / 100}
+                      isMoving={isRunning && !isPaused && !gameState.isHalted}
+                      showSleepOverlay={gameState.showSleepOverlay}
+                      pathLength={100}
+                      showBackground={true}
+                      triggerAppleEat={gameState.isWon}
+                      variationKey={pathSeed}
+                    />
+                  </ImageBackground>
 
-              {/* Permission warning */}
-              {!hasPermission && (
-                <Text style={styles.permissionWarning}>
-                  Microphone permission required
-                </Text>
-              )}
-
-              {/* Dev performance stats */}
-              {__DEV__ && perfStats && (
-                <View style={styles.perfStats}>
-                  <Text style={styles.perfStatsText}>
-                    Frame: {perfStats.averageFrameTime.toFixed(1)}ms avg | {perfStats.p95FrameTime.toFixed(1)}ms p95
-                  </Text>
-                  {perfStats.droppedFrames > 0 && (
-                    <Text style={[styles.perfStatsText, styles.perfWarning]}>
-                      ⚠️ Dropped frames: {perfStats.droppedFrames}
-                    </Text>
+                  {isPaused && isRunning && (
+                    <View style={styles.pausedTint} pointerEvents="none">
+                      <Text style={styles.pausedTintText}>Paused</Text>
+                    </View>
                   )}
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-      </SnakeGameEngine>
+
+                  {/* Prompt overlay when not started */}
+                  {!gameStarted && !gameCompleted && (
+                    <View style={styles.promptOverlay}>
+                      <View style={styles.promptCard}>
+                        <Text style={styles.promptTitle}>Say this sound:</Text>
+                        <Text style={styles.promptPhoneme}>{level.contentExample}</Text>
+                        <Text style={styles.promptInstruction}>
+                          {getInstructionText(level)} for {level.targetDurationSec} seconds!
+                        </Text>
+                        <View style={styles.promptButtonContainer}>
+                          <PressableScaleButton
+                            style={[styles.button, styles.buttonPrimary, !hasPermission && styles.buttonDisabled]}
+                            onPress={async () => {
+                              hapticLight();
+                              triggerReadyToast();
+                              setGameStarted(true);
+                              await start();
+                            }}
+                            disabled={!hasPermission}
+                            accessibilityLabel="Start"
+                          >
+                            <MaterialCommunityIcons name="play" size={32} color="#FFFFFF" />
+                            <Text style={styles.buttonPrimaryText}>Start</Text>
+                          </PressableScaleButton>
+                          {!hasPermission && (
+                            <Text style={styles.permissionWarning}>
+                              Microphone permission required
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Sleep prompt overlay - FR-015 */}
+                  {gameState.showSleepOverlay && isRunning && (
+                    <View style={styles.sleepPromptOverlay}>
+                      <View style={styles.sleepPromptCard}>
+                        <Text style={styles.sleepPromptEmoji}>😴</Text>
+                        <Text style={styles.sleepPromptText}>
+                          Wake up the snake! Keep saying your sound
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Completion overlay */}
+                  {gameCompleted && finalMetrics && completionReason !== 'win' && (
+                    <View style={styles.completionOverlay}>
+                      <View style={styles.completionCard}>
+                        <Text style={styles.completionTitle}>
+                          {finalMetrics.completionPercentage >= 100 ? '🎉 Well Done!' : '⏱️ Time\'s Up!'}
+                        </Text>
+                        <Text style={styles.completionStats}>
+                          Duration: {finalMetrics.durationAchieved.toFixed(1)}s / {finalMetrics.targetDuration}s
+                        </Text>
+                        <Text style={styles.completionStats}>
+                          Progress: {Math.round(finalMetrics.completionPercentage)}%
+                        </Text>
+                        {finalMetrics.pauseCount > 0 && (
+                          <Text style={styles.completionStats}>
+                            Pauses: {finalMetrics.pauseCount} ({finalMetrics.totalPauseDuration.toFixed(1)}s)
+                          </Text>
+                        )}
+                        
+                        <View style={styles.completionButtons}>
+                          <PressableScaleButton
+                            style={[styles.button, styles.buttonSecondary]}
+                            onPress={() => {
+                              hapticLight();
+                              handleRetry();
+                            }}
+                            accessibilityLabel="Try again"
+                          >
+                            <Text style={styles.buttonSecondaryText}>Try Again</Text>
+                          </PressableScaleButton>
+                          <PressableScaleButton
+                            style={[styles.button, styles.buttonPrimary]}
+                            onPress={() => {
+                              hapticLight();
+                              router.back();
+                            }}
+                            accessibilityLabel="Done"
+                          >
+                            <Text style={styles.buttonPrimaryText}>Done</Text>
+                          </PressableScaleButton>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </Animated.View>
+
+                {/* CONTROL DECK CARD (Bottom) */}
+                <Animated.View style={[styles.controlDeckCard, cardEntranceStyle]}>
+                  {/* <Animated.View pointerEvents="none" style={[styles.readyToast, { opacity: readyToastOpacity }]}> 
+                    <Text style={styles.readyToastText}>Ready</Text>
+                  </Animated.View> */}
+                  {/* Sentence / Prompt Display */}
+                  <View style={styles.sentenceCard}>
+                    <Text style={styles.sentenceLabel}>Say:</Text>
+                    <Text style={styles.sentenceText}>{level.contentExample}</Text>
+                  </View>
+                  {/* Real-time Visualizer (FR-005) */}
+                  {/* <View style={styles.visualizerContainer}>
+                    {Array.from({ length: 16 }).map((_, i) => {
+                      const height = Math.max(4, Math.round((i % 4 + 1) * 8 * (gameState.lastAmplitude || 0)));
+                      const active = (gameState.lastAmplitude || 0) >= 0.5;
+                      return (
+                        <View
+                          key={i}
+                          style={[
+                            styles.visualizerBar,
+                            { height },
+                            active ? styles.visualizerBarActive : styles.visualizerBarIdle,
+                          ]}
+                        />
+                      );
+                    })}
+                  </View> */}
+                </Animated.View>
+              </View>
+            )}
+          </SnakeGameEngine>
         </>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -613,7 +703,145 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F0FFF0',
+    flexDirection: 'column',
   },
+  
+  /* ============ FLOATING HEADER ============ */
+  floatingHeader: {
+    height: 56,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    backgroundColor: 'transparent',
+    zIndex: 30,
+  },
+  pauseButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(26, 115, 232, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  backButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(26, 115, 232, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  levelPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(26, 115, 232, 0.3)',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  levelPillText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1a73e8',
+  },
+  levelPillSubtext: {
+    fontSize: 11,
+    color: '#4B5563',
+    fontWeight: '600',
+  },
+  levelGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pausedBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 193, 7, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 193, 7, 0.4)',
+  },
+  pausedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8a6d00',
+  },
+  
+  /* ============ GAME VIEWPORT CARD ============ */
+  gameViewportCard: {
+    flex: 1,
+    margin: 12,
+    marginTop: 8,
+    backgroundColor: '#F7FAFF',
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(26, 115, 232, 0.08)',
+    shadowColor: '#0A2540',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+
+  gameBackground: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+
+  pausedTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(12, 18, 28, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pausedTintText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+    letterSpacing: 0.5,
+  },
+  
+  /* ============ CONTROL DECK CARD ============ */
+  controlDeckCard: {
+    backgroundColor: '#F9FBFF',
+    borderRadius: 18,
+    margin: 12,
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(26, 115, 232, 0.08)',
+    shadowColor: '#0A2540',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
+    position: 'relative',
+  },
+  
+  /* ============ GAME CONTAINER (Legacy) ============ */
   gameContainer: {
     flex: 1,
   },
@@ -656,6 +884,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
+    maxWidth: 180,
   },
   hudLabel: {
     fontSize: 11,
@@ -666,6 +895,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#1F2937',
+    flexShrink: 1,
   },
   hudTopLeft: {
     position: 'absolute',
@@ -678,10 +908,8 @@ const styles = StyleSheet.create({
     right: 12,
     alignItems: 'flex-end',
   },
-  pathContainer: {
-    flex: 1,
-    position: 'relative',
-  },
+  
+  /* ============ OVERLAYS & PROMPTS ============ */
   promptOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
@@ -716,10 +944,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666666',
     textAlign: 'center',
+    marginBottom: 20,
+  },
+  promptButtonContainer: {
+    width: '100%',
+    alignItems: 'center',
+    gap: 8,
   },
   sleepPromptOverlay: {
     position: 'absolute',
-    top: '30%',
+    top: '26%',
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -727,21 +961,22 @@ const styles = StyleSheet.create({
   sleepPromptCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     alignItems: 'center',
-    maxWidth: '70%',
+    maxWidth: '55%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
   },
   sleepPromptEmoji: {
-    fontSize: 32,
-    marginBottom: 8,
+    fontSize: 24,
+    marginBottom: 4,
   },
   sleepPromptText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666666',
     textAlign: 'center',
   },
@@ -780,11 +1015,10 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 20,
   },
+  
+  /* ============ CONTROLS & BUTTONS ============ */
   controlsContainer: {
     padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
     gap: 12,
   },
   gameControls: {
@@ -853,5 +1087,79 @@ const styles = StyleSheet.create({
   perfWarning: {
     color: '#DC3545',
     fontWeight: 'bold',
+  },
+  
+  /* ============ SENTENCE CARD ============ */
+  sentenceCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#0A2540',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  sentenceLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  sentenceText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  sentencePhonemes: {
+    fontSize: 13,
+    color: '#4B5563',
+  },
+  visualizerContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  visualizerBar: {
+    width: 8,
+    borderRadius: 4,
+  },
+  visualizerBarIdle: {
+    backgroundColor: '#D1D5DB',
+  },
+  visualizerBarActive: {
+    backgroundColor: '#34D399',
+  },
+  readyToast: {
+    position: 'absolute',
+    top: 8,
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(26, 115, 232, 0.12)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(26, 115, 232, 0.25)',
+  },
+  readyToastText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1a73e8',
+    letterSpacing: 0.3,
   },
 });

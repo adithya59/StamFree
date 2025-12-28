@@ -11,12 +11,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
-    Dimensions,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -42,10 +42,10 @@ export const RetryModal: React.FC<RetryModalProps> = ({
   onBack,
 }) => {
   const defaultMessages: Record<string, string> = {
-    timeout: "Time's up! But you did great! Let's try again and push a little further.",
-    manual: 'No worries! Ready to give it another shot?',
+    timeout: "Time's up! You made good progress. Perhaps try when you're feeling refreshed?",
+    manual: 'No pressure! Take a break if needed, or give it another go when ready.',
     silent:
-      'Wake up the snake! Keep saying your sound to help it reach the apple. You\'ve got this!',
+      'Wake up the snake! Keep making your sound steadily to help it reach the apple. You can do this!',
   };
 
   const displayMessage = message || defaultMessages[reason];
@@ -147,7 +147,7 @@ export const RetryModal: React.FC<RetryModalProps> = ({
 
           {/* Motivational tagline */}
           <Text style={styles.tagline}>
-            Every attempt makes you stronger! 🚀
+            {reason === 'timeout' ? 'Rest and try again when ready 💙' : 'Every attempt makes you stronger! 🚀'}
           </Text>
         </View>
       </View>

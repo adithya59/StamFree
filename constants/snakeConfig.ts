@@ -17,7 +17,7 @@ export const SNAKE_CONFIG = {
    * Default: 0.1 (10% of max amplitude)
    * Related: FR-004, FR-020
    */
-  AMPLITUDE_THRESHOLD: 0.25,
+  AMPLITUDE_THRESHOLD: 0.1,
 
   /**
    * Grace period before halting movement when amplitude drops below threshold.
@@ -26,7 +26,7 @@ export const SNAKE_CONFIG = {
    * Default: 0.1s
    * Related: FR-004
    */
-  SILENCE_GRACE_PERIOD: 0.25,
+  SILENCE_GRACE_PERIOD: 0.1,
 
   /**
    * Delay before showing "Zzz" sleep overlay after continuous silence.
@@ -35,7 +35,7 @@ export const SNAKE_CONFIG = {
    * Default: 2.0s
    * Related: Edge Cases, US4 Acceptance Scenario 2
    */
-  SLEEP_OVERLAY_DELAY: 1.0,
+  SLEEP_OVERLAY_DELAY: 2.0,
 
   /**
    * Maximum snake speed cap (as multiplier of base speed).
@@ -43,10 +43,10 @@ export const SNAKE_CONFIG = {
    * Base speed = pathLength / targetDuration
    * Effective speed = min(v_max, baseSpeed * f(amplitude))
    * Range: [1.0, Infinity]
-   * Default: 1.5 (50% faster than base at max volume)
+  * Default: 1.0 (cap at base speed)
    * Related: FR-003, FR-019
    */
-  V_MAX: 1.5,
+  V_MAX: 1.0,
 
   /**
    * Target frame rate for game loop and visualizer updates.
@@ -91,6 +91,34 @@ export const SNAKE_CONFIG = {
    * Smoothing factor for amplitude low-pass filter (0..1, higher = more weight on new sample)
    */
   AMPLITUDE_SMOOTHING_ALPHA: 0.35,
+
+  /**
+   * Hysteresis thresholds for voicing detection
+   * - Movement only allowed when smoothed amplitude rises above VOICING_ON_THRESHOLD
+   * - Movement stops when smoothed amplitude falls below VOICING_OFF_THRESHOLD
+   * Helps avoid flicker from borderline inputs and enforces stronger starts with quicker stops.
+   */
+  VOICING_ON_THRESHOLD: 0.35,
+  VOICING_OFF_THRESHOLD: 0.25,
+  /**
+   * Minimum sustained time above VOICING_ON_THRESHOLD required to wake the snake (seconds)
+   */
+  WAKE_LOCK_DURATION: 0.15,
+
+  /**
+   * Raw off hold: if raw (unsmoothed) amplitude falls at/below NOISE_FLOOR
+   * for this duration (seconds), force voicing off immediately.
+   * Helps the snake stop promptly when the user stops speaking.
+   */
+  RAW_OFF_HOLD: 0.06,
+
+  /**
+   * Classifier/voicing thresholds (keep in sync with server SPEECH_PROB_MIN/PITCHED_RATIO_MIN)
+   * SPEECH_PROB_MIN: minimum speech probability to treat as voiced for indicator/back-end alignment
+   * PITCHED_RATIO_MIN: minimum voiced-frame ratio to consider voiced in heuristics
+   */
+  SPEECH_PROB_MIN: 0.35,
+  PITCHED_RATIO_MIN: 0.15,
 
   /**
    * If true, mismatched phoneme reduces stars/XP strictly.

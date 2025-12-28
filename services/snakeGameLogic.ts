@@ -23,6 +23,8 @@ export interface GameState {
   targetDuration: number;
   /** Total elapsed time (seconds) */
   elapsedTime: number;
+  /** Whether timer has started (first non-zero amplitude detected) */
+  hasStarted: boolean;
   /** Time spent in silence (seconds) */
   silenceTime: number;
   /** Whether movement is currently halted */
@@ -62,6 +64,7 @@ export function createInitialGameState(
     pathLength,
     targetDuration,
     elapsedTime: 0,
+    hasStarted: false,
     silenceTime: 0,
     isHalted: false,
     showSleepOverlay: false,
@@ -173,14 +176,21 @@ export function updateGameState(
   }
 
   const silent = isSilent(amplitude);
-  let newSilenceTime = silent ? state.silenceTime + deltaTime : 0;
+  // Only accumulate silence after the timer has started (post first voicing)
+  let newSilenceTime = 0;
+  if (silent && (state.hasStarted || amplitude > 0)) {
+    newSilenceTime = state.silenceTime + deltaTime;
+  }
   let newPauseCount = state.pauseCount;
   let newTotalPauseDuration = state.totalPauseDuration;
+
+  // Gate timer: start only after first non-zero amplitude (post-gating)
+  const newHasStarted = state.hasStarted || amplitude > 0;
 
   // Handle pause detection in allowPauses mode
   if (
     levelConfig.allowPauses &&
-    silent &&
+    silent && (state.hasStarted || amplitude > 0) &&
     isIntentionalPause(
       newSilenceTime,
       levelConfig.maxPauseDuration ?? SNAKE_CONFIG.MAX_PAUSE_DURATION_DEFAULT
@@ -193,9 +203,9 @@ export function updateGameState(
     newTotalPauseDuration += deltaTime;
   }
 
-  // Determine movement halt
-  const newIsHalted = shouldHaltMovement(newSilenceTime);
-  const newShowSleepOverlay = shouldShowSleepOverlay(newSilenceTime);
+  // Determine movement halt (only after initial voicing)
+  const newIsHalted = (state.hasStarted || amplitude > 0) ? shouldHaltMovement(newSilenceTime) : false;
+  const newShowSleepOverlay = (state.hasStarted || amplitude > 0) ? shouldShowSleepOverlay(newSilenceTime) : false;
 
   // Update position only if not halted
   let newPosition = state.position;
@@ -213,13 +223,14 @@ export function updateGameState(
   const newIsWon = isLevelWon(newPosition, state.pathLength);
 
   // Check timeout
-  const newElapsedTime = state.elapsedTime + deltaTime;
+  const newElapsedTime = state.elapsedTime + (newHasStarted ? deltaTime : 0);
   const newIsTimedOut = isLevelTimedOut(newElapsedTime, state.targetDuration);
 
   return {
     ...state,
     position: newPosition,
     elapsedTime: newElapsedTime,
+    hasStarted: newHasStarted,
     silenceTime: newSilenceTime,
     isHalted: newIsHalted,
     showSleepOverlay: newShowSleepOverlay,

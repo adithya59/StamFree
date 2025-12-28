@@ -10,11 +10,11 @@
 
 import { SNAKE_CONFIG } from '@/constants/snakeConfig';
 import {
-    createInitialGameState,
-    getCompletionPercentage,
-    updateGameState,
-    type GameState,
-    type LevelConfig,
+  createInitialGameState,
+  getCompletionPercentage,
+  updateGameState,
+  type GameState,
+  type LevelConfig,
 } from '@/services/snakeGameLogic';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -80,6 +80,10 @@ export function useSnakeGame(options: UseSnakeGameOptions): SnakeGameHookResult 
   const lastFrameTimeRef = useRef<number | null>(null);
   const currentAmplitudeRef = useRef<number>(0);
   const pauseStartTimeRef = useRef<number | null>(null);
+  const gameStateRef = useRef<GameState>(
+    createInitialGameState(pathLength, levelConfig.targetDurationSec)
+  );
+  const isGameOverRef = useRef<boolean>(false);
 
   // Performance tracking
   const frameTimesRef = useRef<number[]>([]);
@@ -109,10 +113,15 @@ export function useSnakeGame(options: UseSnakeGameOptions): SnakeGameHookResult 
           levelConfig
         );
 
+        // Sync ref immediately for stale-closure prevention
+        gameStateRef.current = newState;
+
         // Check win condition
         if (newState.isWon && !prevState.isWon) {
+          isGameOverRef.current = true;
+          const clampedDuration = Math.min(newState.elapsedTime, newState.targetDuration);
           const metrics: GameMetrics = {
-            durationAchieved: newState.elapsedTime,
+            durationAchieved: clampedDuration,
             targetDuration: newState.targetDuration,
             completionPercentage: 100,
             pauseCount: newState.pauseCount,
@@ -124,8 +133,10 @@ export function useSnakeGame(options: UseSnakeGameOptions): SnakeGameHookResult 
 
         // Check timeout condition
         if (newState.isTimedOut && !prevState.isTimedOut) {
+          isGameOverRef.current = true;
+          const clampedDuration = Math.min(newState.elapsedTime, newState.targetDuration);
           const metrics: GameMetrics = {
-            durationAchieved: newState.elapsedTime,
+            durationAchieved: clampedDuration,
             targetDuration: newState.targetDuration,
             completionPercentage: getCompletionPercentage(
               newState.position,
@@ -176,14 +187,14 @@ export function useSnakeGame(options: UseSnakeGameOptions): SnakeGameHookResult 
         }
       }
 
-      // Continue loop if game not finished
-      if (!gameState.isWon && !gameState.isTimedOut) {
+      // Continue loop if game not finished (ref-based)
+      if (!isGameOverRef.current) {
         rafIdRef.current = requestAnimationFrame(tick);
       } else {
         setIsRunning(false);
       }
     },
-    [gameState.isWon, gameState.isTimedOut, levelConfig, onWin, onTimeout, enablePerfTracking]
+    [levelConfig, onWin, onTimeout, enablePerfTracking]
   );
 
   // Start game
@@ -193,6 +204,7 @@ export function useSnakeGame(options: UseSnakeGameOptions): SnakeGameHookResult 
     setIsPaused(false);
     lastFrameTimeRef.current = null;
     frameTimesRef.current = [];
+    isGameOverRef.current = false;
     rafIdRef.current = requestAnimationFrame(tick);
   }, [isRunning, tick]);
 
@@ -224,7 +236,10 @@ export function useSnakeGame(options: UseSnakeGameOptions): SnakeGameHookResult 
     }
     setIsRunning(false);
     setIsPaused(false);
-    setGameState(createInitialGameState(pathLength, levelConfig.targetDurationSec));
+    const initial = createInitialGameState(pathLength, levelConfig.targetDurationSec);
+    setGameState(initial);
+    gameStateRef.current = initial;
+    isGameOverRef.current = false;
     currentAmplitudeRef.current = 0;
     lastFrameTimeRef.current = null;
     frameTimesRef.current = [];

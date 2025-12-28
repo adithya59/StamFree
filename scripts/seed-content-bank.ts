@@ -289,6 +289,14 @@ async function seedContentBank() {
   const batch = db.batch();
   const timestamp = new Date().toISOString();
   let count = 0;
+  const snakeTierTypeCounts: Record<string, number> = {
+    '1_word': 0,
+    '1_phrase': 0,
+    '1_sentence': 0,
+    '2_word': 0,
+    '2_phrase': 0,
+    '2_sentence': 0,
+  };
 
   for (const item of contentDatabase) {
     // Generate unique ID
@@ -296,6 +304,19 @@ async function seedContentBank() {
 
     // Calculate compatible games
     const compatibleGames = getCompatibleGames(item.tier, item.phonemeCode, item.syllables);
+
+    // Guard: Snake should never include Tier 3 stops
+    if (item.tier === 3 && compatibleGames.includes('snake')) {
+      throw new Error(`Invalid snake compatibility for tier 3 item: ${id}`);
+    }
+
+    // Track snake coverage by tier/type for reporting
+    if (compatibleGames.includes('snake')) {
+      const key = `${item.tier}_${item.type}`;
+      if (snakeTierTypeCounts[key] !== undefined) {
+        snakeTierTypeCounts[key]++;
+      }
+    }
 
     // Create full document
     const doc: ContentBankItem = {
@@ -338,6 +359,9 @@ async function seedContentBank() {
   console.log(`   Phrases: ${typeCounts.phrase}`);
   console.log(`   Sentences: ${typeCounts.sentence}`);
   console.log(`   Snake-compatible: ${snakeCompatible} (Tier 1+2 only)`);
+  console.log('   Snake coverage by tier/type (should exclude tier 3):');
+  console.log(`     T1 word: ${snakeTierTypeCounts['1_word']}, phrase: ${snakeTierTypeCounts['1_phrase']}, sentence: ${snakeTierTypeCounts['1_sentence']}`);
+  console.log(`     T2 word: ${snakeTierTypeCounts['2_word']}, phrase: ${snakeTierTypeCounts['2_phrase']}, sentence: ${snakeTierTypeCounts['2_sentence']}`);
 }
 
 /**

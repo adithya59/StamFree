@@ -22,6 +22,8 @@ export interface SnakeGameEngineProps extends UseSnakeGameOptions {
   onRecordingStop?: (uri: string | null) => void;
   /** Called with error if audio setup fails */
   onAudioError?: (error: Error) => void;
+  /** Require voiced gating (used for vowels/liquids) */
+  voicingRequired?: boolean;
   /** Render function receiving game state and controls */
   children: (props: SnakeGameEngineRenderProps) => React.ReactNode;
 }
@@ -61,6 +63,7 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
   onRecordingStart,
   onRecordingStop,
   onAudioError,
+  voicingRequired = false,
   enablePerfTracking = false,
   children,
 }) => {
@@ -69,6 +72,42 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
   const recordingRef = useRef<Audio.Recording | null>(null);
   const audioUriRef = useRef<string | null>(null);
   const smoothedAmplitudeRef = useRef(0);
+  const isVoicingRef = useRef(false);
+  const aboveOnTimeRef = useRef(0);
+  const belowRawOffTimeRef = useRef(0);
+  const lastUpdateMsRef = useRef<number>(Date.now());
+  const updateAmplitudeRef = useRef<((amplitude: number) => void) | null>(null);
+
+  // Stop recording (declared early to avoid forward reference in useSnakeGame)
+  const stopRecording = useCallback(async () => {
+    try {
+      if (!recordingRef.current) {
+        console.log('[SnakeGameEngine] No recording to stop');
+        return;
+      }
+
+      const recording = recordingRef.current;
+      recordingRef.current = null; // Clear immediately to prevent double-stop
+
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      audioUriRef.current = uri;
+
+      // Reset amplitude
+      smoothedAmplitudeRef.current = 0;
+      isVoicingRef.current = false;
+      aboveOnTimeRef.current = 0;
+      belowRawOffTimeRef.current = 0;
+      lastUpdateMsRef.current = Date.now();
+      setCurrentAmplitude(0);
+      updateAmplitudeRef.current?.(0);
+
+      onRecordingStop?.(uri);
+    } catch (error) {
+      console.error('[SnakeGameEngine] Stop recording error:', error);
+      onRecordingStop?.(null);
+    }
+  }, [onRecordingStop]);
 
   // Game hook
   const {
@@ -90,17 +129,20 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
         // Stop recording on win
         stopRecording().then(() => onWin?.(metrics));
       },
-      [onWin]
+      [stopRecording, onWin]
     ),
     onTimeout: useCallback(
       (metrics: GameMetrics) => {
         // Stop recording on timeout
         stopRecording().then(() => onTimeout?.(metrics));
       },
-      [onTimeout]
+      [stopRecording, onTimeout]
     ),
     enablePerfTracking,
   });
+
+  // Store updateAmplitude in ref for stopRecording callback
+  updateAmplitudeRef.current = updateAmplitude;
 
   // Request audio permissions
   const requestPermission = useCallback(async () => {
@@ -179,6 +221,9 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
       // Set up real-time amplitude updates (FR-002, FR-005)
       recording.setOnRecordingStatusUpdate((status) => {
         if (status.isRecording && status.metering !== undefined) {
+          const now = Date.now();
+          const dt = Math.max(0, (now - lastUpdateMsRef.current) / 1000);
+          lastUpdateMsRef.current = now;
           // Convert dB to linear amplitude (0-1)
           // Expo AV metering is in dB, typically -160 to 0
           // Normalize to 0-1 range
@@ -192,13 +237,53 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
 
           smoothedAmplitudeRef.current = smoothed;
 
-          const gatedAmplitude =
-            smoothed < Math.max(SNAKE_CONFIG.NOISE_FLOOR, SNAKE_CONFIG.AMPLITUDE_THRESHOLD)
-              ? 0
-              : smoothed;
-          
-          setCurrentAmplitude(gatedAmplitude);
-          updateAmplitude(gatedAmplitude);
+          // Apply hysteresis gating with wake lock: require sustained time above ON threshold
+          const onGate = Math.max(SNAKE_CONFIG.NOISE_FLOOR, SNAKE_CONFIG.VOICING_ON_THRESHOLD);
+          if (smoothed >= onGate) {
+            aboveOnTimeRef.current += dt;
+          } else {
+            aboveOnTimeRef.current = 0;
+          }
+
+          const requiredAboveTime = voicingRequired
+            ? SNAKE_CONFIG.MIN_CONTINUOUS_DURATION
+            : SNAKE_CONFIG.WAKE_LOCK_DURATION;
+
+          if (!isVoicingRef.current) {
+            if (aboveOnTimeRef.current >= requiredAboveTime) {
+              isVoicingRef.current = true;
+            }
+          } else {
+            if (smoothed < SNAKE_CONFIG.VOICING_OFF_THRESHOLD) {
+              isVoicingRef.current = false;
+              aboveOnTimeRef.current = 0;
+            }
+          }
+
+          // Additional raw-off guard: if raw amplitude falls to/below noise floor,
+          // accumulate off time and force voicing off quickly.
+          if (normalizedAmplitude <= SNAKE_CONFIG.NOISE_FLOOR) {
+            belowRawOffTimeRef.current += dt;
+            if (belowRawOffTimeRef.current >= SNAKE_CONFIG.RAW_OFF_HOLD) {
+              isVoicingRef.current = false;
+              aboveOnTimeRef.current = 0;
+            }
+          } else {
+            belowRawOffTimeRef.current = 0;
+          }
+
+          // Force immediate zero output when raw is at/below noise floor for responsive stop
+          const gatedAmplitude = normalizedAmplitude <= SNAKE_CONFIG.NOISE_FLOOR
+            ? 0
+            : (isVoicingRef.current ? smoothed : 0);
+
+          // Additional clamp: if smoothed falls below movement threshold, force zero
+          const finalAmplitude = gatedAmplitude > 0 && smoothed < SNAKE_CONFIG.AMPLITUDE_THRESHOLD
+            ? 0
+            : gatedAmplitude;
+
+          setCurrentAmplitude(finalAmplitude);
+          updateAmplitude(finalAmplitude);
         }
       });
 
@@ -212,28 +297,6 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
       throw error;
     }
   }, [hasPermission, requestPermission, configureAudio, updateAmplitude, onRecordingStart, onAudioError]);
-
-  // Stop recording
-  const stopRecording = useCallback(async () => {
-    try {
-      if (!recordingRef.current) return;
-
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      audioUriRef.current = uri;
-      recordingRef.current = null;
-
-      // Reset amplitude
-      smoothedAmplitudeRef.current = 0;
-      setCurrentAmplitude(0);
-      updateAmplitude(0);
-
-      onRecordingStop?.(uri);
-    } catch (error) {
-      console.error('[SnakeGameEngine] Stop recording error:', error);
-      onRecordingStop?.(null);
-    }
-  }, [updateAmplitude, onRecordingStop]);
 
   // Start game + recording
   const start = useCallback(async () => {
@@ -272,6 +335,9 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
   const reset = useCallback(() => {
     stopRecording().then(() => {
       smoothedAmplitudeRef.current = 0;
+      isVoicingRef.current = false;
+      aboveOnTimeRef.current = 0;
+      lastUpdateMsRef.current = Date.now();
       resetGame();
     });
   }, [stopRecording, resetGame]);

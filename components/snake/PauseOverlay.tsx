@@ -190,8 +190,8 @@ export function PauseOverlay(props: PauseOverlayProps) {
           {/* Info Text */}
           <Text style={styles.infoText}>
             {isExpired
-              ? 'Pause duration exceeded. The game will reset to the beginning.'
-              : 'You can pause for up to 5 minutes before the game resets.'}
+              ? 'Take your time! The game has reset. Resume when you\'re ready.'
+              : 'Take all the time you need. If paused over 5 minutes, we\'ll reset for a fresh start.'}
           </Text>
 
           {/* Action Buttons */}

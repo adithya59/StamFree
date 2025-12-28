@@ -19,8 +19,8 @@ import {
     getDoc,
     getDocs,
     query,
+    runTransaction,
     setDoc,
-    updateDoc,
     where
 } from 'firebase/firestore';
 
@@ -147,6 +147,13 @@ export const TIER_UNLOCK_THRESHOLDS = {
 };
 
 /**
+ * Confidence threshold for adaptive progression (FR-022)
+ * ≥0.75 = high confidence → advance
+ * <0.75 = low confidence → repeat or downgrade
+ */
+export const PROGRESSION_CONFIDENCE_THRESHOLD = 0.75;
+
+/**
  * Load all levels for a specific tier from Firestore
  * FR-009: Query content_bank filtered by compatibleGames: ['snake'], tier
  * 
@@ -213,42 +220,84 @@ export async function getSnakeLevel(levelId: string): Promise<SnakeLevel | null>
 
 /**
  * Get next level after completing current level
+ * Implements adaptive progression based on AI confidence (FR-022)
+ * 
+ * @param currentLevel - Level just completed
+ * @param userProgress - User's current progress
+ * @param confidence - AI confidence score (0.0-1.0)
+ * @param starsAwarded - Stars from AI analysis (1 or 3)
+ * @returns Next level to play, or null if none available
  */
 export async function getNextLevel(
   currentLevel: SnakeLevel,
-  userProgress: UserProgress
+  userProgress: UserProgress,
+  confidence?: number,
+  starsAwarded?: number
 ): Promise<SnakeLevel | null> {
   try {
     const levelsInTier = await getSnakeLevelsByTier(currentLevel.tier);
     const typeOrder = { word: 0, phrase: 1, sentence: 2 };
     const currentTypeIndex = typeOrder[currentLevel.type];
 
-    // Try next level in same tier
+    // Determine progression path based on performance
+    const highConfidence = confidence !== undefined && confidence >= PROGRESSION_CONFIDENCE_THRESHOLD;
+    const success = starsAwarded === 3;
+
+    // Case 1: High confidence + 3 stars → Advance to next level
+    if (highConfidence && success) {
+      // Try next level in same tier
+      const nextInTier = levelsInTier.find(
+        (l) => typeOrder[l.type] > currentTypeIndex && !userProgress.completedLevels.includes(l.levelId)
+      );
+
+      if (nextInTier) {
+        console.log('[SnakeProgression] Advancing to next level:', nextInTier.levelId);
+        return nextInTier;
+      }
+
+      // Current tier complete - check if next tier is unlocked
+      if (currentLevel.tier < 3) {
+        const nextTier = (currentLevel.tier + 1) as 1 | 2 | 3;
+        const nextTierThreshold = TIER_UNLOCK_THRESHOLDS[nextTier];
+
+        if (userProgress.totalXP >= nextTierThreshold) {
+          const nextTierLevels = await getSnakeLevelsByTier(nextTier);
+          console.log('[SnakeProgression] Tier complete! Moving to Tier', nextTier);
+          return nextTierLevels[0] || null;
+        } else {
+          console.log(`[SnakeProgression] Tier complete but next tier locked. Need ${nextTierThreshold - userProgress.totalXP} more XP.`);
+          return null;
+        }
+      }
+
+      console.log('[SnakeProgression] All tiers completed!');
+      return null;
+    }
+
+    // Case 2: Low confidence or failure → Repeat similar difficulty
+    if (!highConfidence || !success) {
+      // Find another level at same tier/type that hasn't been completed recently
+      const similarLevels = levelsInTier.filter(
+        (l) => l.type === currentLevel.type && l.levelId !== currentLevel.levelId
+      );
+
+      if (similarLevels.length > 0) {
+        // Pick random similar level
+        const randomLevel = similarLevels[Math.floor(Math.random() * similarLevels.length)];
+        console.log('[SnakeProgression] Low confidence - repeating similar level:', randomLevel.levelId);
+        return randomLevel;
+      }
+
+      // No similar levels available - repeat current level
+      console.log('[SnakeProgression] No similar levels - suggesting retry of current level');
+      return currentLevel;
+    }
+
+    // Fallback: sequential progression
     const nextInTier = levelsInTier.find(
       (l) => typeOrder[l.type] > currentTypeIndex
     );
-
-    if (nextInTier) {
-      return nextInTier;
-    }
-
-    // Current tier complete - check if next tier is unlocked
-    if (currentLevel.tier < 3) {
-      const nextTier = (currentLevel.tier + 1) as 1 | 2 | 3;
-      const nextTierThreshold = TIER_UNLOCK_THRESHOLDS[nextTier];
-
-      if (userProgress.totalXP >= nextTierThreshold) {
-        // Next tier unlocked - get first level
-        const nextTierLevels = await getSnakeLevelsByTier(nextTier);
-        return nextTierLevels[0] || null;
-      } else {
-        console.log(`[SnakeProgression] Next tier locked. Need ${nextTierThreshold - userProgress.totalXP} more XP.`);
-        return null;
-      }
-    }
-
-    console.log('[SnakeProgression] All tiers completed!');
-    return null;
+    return nextInTier || null;
   } catch (error) {
     console.error('[SnakeProgression] Error getting next level:', error);
     return null;
@@ -300,6 +349,7 @@ export async function getUserSnakeProgress(userId: string): Promise<UserProgress
 
 /**
  * Save game completion: award XP, track completed level, check tier unlocks
+ * Uses Firestore transaction to prevent race conditions on concurrent writes
  * FR-010: Track XP and unlock next tier
  * FR-013: Save attempt logs
  */
@@ -312,57 +362,81 @@ export async function saveSnakeProgress(
   try {
     const progressRef = doc(db, 'users', userId, 'progress', 'snake');
     
-    // Get current progress
-    let progress = await getUserSnakeProgress(userId);
+    // Use transaction to atomically read and write progress
+    const progress = await runTransaction(db, async (transaction) => {
+      // Read current progress within transaction
+      const snapshot = await transaction.get(progressRef);
+      
+      let progress: UserProgress;
+      if (snapshot.exists()) {
+        progress = snapshot.data() as UserProgress;
+      } else {
+        // Create initial progress if doesn't exist
+        progress = {
+          userId,
+          currentTier: 1,
+          totalXP: 0,
+          unlockedTiers: [1],
+          completedLevels: [],
+          totalGamesPlayed: 0,
+          createdAt: new Date().toISOString(),
+          lastPlayedAt: new Date().toISOString(),
+        };
+      }
 
-    // Add XP
-    const previousXP = progress.totalXP;
-    progress.totalXP += xpGained;
+      // Modify within transaction
+      const previousXP = progress.totalXP;
+      progress.totalXP += xpGained;
 
-    // Track completed level
-    if (!progress.completedLevels.includes(levelId)) {
-      progress.completedLevels.push(levelId);
-    }
+      // Track completed level
+      if (!progress.completedLevels.includes(levelId)) {
+        progress.completedLevels.push(levelId);
+      }
 
-    // Increment games played
-    progress.totalGamesPlayed += 1;
+      // Increment games played
+      progress.totalGamesPlayed += 1;
 
-    // Check for tier unlocks
-    const previousUnlockedTiers = progress.unlockedTiers;
-    const newUnlockedTiers = [1];
+      // Check for tier unlocks
+      const previousUnlockedTiers = progress.unlockedTiers;
+      const newUnlockedTiers = [1];
 
-    if (progress.totalXP >= TIER_UNLOCK_THRESHOLDS[2]) {
-      newUnlockedTiers.push(2);
-    }
-    if (progress.totalXP >= TIER_UNLOCK_THRESHOLDS[3]) {
-      newUnlockedTiers.push(3);
-    }
+      if (progress.totalXP >= TIER_UNLOCK_THRESHOLDS[2]) {
+        newUnlockedTiers.push(2);
+      }
+      if (progress.totalXP >= TIER_UNLOCK_THRESHOLDS[3]) {
+        newUnlockedTiers.push(3);
+      }
 
-    progress.unlockedTiers = newUnlockedTiers;
+      progress.unlockedTiers = newUnlockedTiers;
 
-    // Update current tier (highest unlocked)
-    progress.currentTier = Math.max(...newUnlockedTiers) as 1 | 2 | 3;
-    progress.lastPlayedAt = new Date().toISOString();
+      // Update current tier (highest unlocked)
+      progress.currentTier = Math.max(...newUnlockedTiers) as 1 | 2 | 3;
+      progress.lastPlayedAt = new Date().toISOString();
 
-    // Save to Firestore
-    await updateDoc(progressRef, {
-      totalXP: progress.totalXP,
-      unlockedTiers: progress.unlockedTiers,
-      currentTier: progress.currentTier,
-      completedLevels: progress.completedLevels,
-      totalGamesPlayed: progress.totalGamesPlayed,
-      lastPlayedAt: progress.lastPlayedAt,
+      // Write within transaction (atomic)
+      transaction.set(progressRef, {
+        userId: progress.userId,
+        totalXP: progress.totalXP,
+        unlockedTiers: progress.unlockedTiers,
+        currentTier: progress.currentTier,
+        completedLevels: progress.completedLevels,
+        totalGamesPlayed: progress.totalGamesPlayed,
+        lastPlayedAt: progress.lastPlayedAt,
+        createdAt: progress.createdAt,
+      });
+
+      // Log tier unlock
+      const tierUnlocked = newUnlockedTiers.filter(
+        (t) => !previousUnlockedTiers.includes(t)
+      );
+      if (tierUnlocked.length > 0) {
+        console.log(`[SnakeProgression] 🎉 Tier ${tierUnlocked} unlocked! XP: ${previousXP} → ${progress.totalXP}`);
+      } else {
+        console.log(`[SnakeProgression] XP: ${previousXP} → ${progress.totalXP}`);
+      }
+
+      return progress;
     });
-
-    // Log tier unlock
-    const tierUnlocked = newUnlockedTiers.filter(
-      (t) => !previousUnlockedTiers.includes(t)
-    );
-    if (tierUnlocked.length > 0) {
-      console.log(`[SnakeProgression] 🎉 Tier ${tierUnlocked} unlocked! XP: ${previousXP} → ${progress.totalXP}`);
-    } else {
-      console.log(`[SnakeProgression] XP: ${previousXP} → ${progress.totalXP}`);
-    }
 
     return progress;
   } catch (error) {
