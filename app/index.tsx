@@ -31,7 +31,9 @@ export default function Index() {
       console.log('Auth State Changed. User:', user ? user.uid : 'null');
       if (user) {
         router.replace('/(tabs)');
-      } 
+      } else {
+        router.replace('/(auth)/login');
+      }
       setLoading(false);
     });
 
