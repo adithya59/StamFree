@@ -15,27 +15,19 @@ interface ExerciseTile {
 
 const exercises: ExerciseTile[] = [
   {
-    id: 'speech-practice',
-    title: 'Speech Practice',
-    description: 'Practice sentences with TalkingTurtle',
-    icon: 'microphone',
+    id: 'turtle',
+    title: 'Turtle (Slow & Steady)',
+    description: 'Practice slow, controlled speech',
+    icon: 'tortoise',
     color: '#FF6B6B',
-    route: 'exercises/speech-practice',
-  },
-  {
-    id: 'breathing',
-    title: 'BreathingBalloon',
-    description: 'Learn controlled breathing techniques',
-    icon: 'lungs',
-    color: '#4ECDC4',
-    route: 'exercises/breathing-exercises',
+    route: '/exercises/turtle-game',
   },
   {
     id: 'snake',
     title: 'Snake (Smooth Sound)',
     description: 'Sustain your sound smoothly without repetition',
     icon: 'snake',
-    color: '#10B981',
+    color: '#1DD1A1',
     route: '/exercises/snake-game',
   },
   {
@@ -43,8 +35,16 @@ const exercises: ExerciseTile[] = [
     title: 'Word Games',
     description: 'Fun word puzzles and games',
     icon: 'cards-variant',
-    color: '#FFD93D',
+    color: '#FECA57',
     route: '/exercises/word-games',
+  },
+  {
+    id: 'breathing',
+    title: 'Breathing Exercises',
+    description: 'Improve your breath control',
+    icon: 'lungs',
+    color: '#54A0FF',
+    route: '/exercises/breathing-exercises',
   },
 ];
 

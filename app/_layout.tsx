@@ -37,7 +37,7 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="exercises/speech-practice" options={{ headerShown: false }} />
+        <Stack.Screen name="exercises/turtle-game" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/breathing-exercises" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/word-games" options={{ headerShown: false }} />
         <Stack.Screen name="demo" options={{ headerShown: false }} />
