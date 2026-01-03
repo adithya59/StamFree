@@ -126,7 +126,7 @@ export default function ProgressScreen() {
               <MaterialCommunityIcons name="snake" size={28} color="#fff" />
             </View>
             <View>
-              <Text style={styles.gameTitle}>Snake Phonation</Text>
+              <Text style={styles.gameTitle}>Snake</Text>
               <Text style={styles.gameSubtitle}>Master your sounds by holding them long and smooth.</Text>
             </View>
           </View>

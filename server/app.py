@@ -545,7 +545,11 @@ def analyze_snake():
                 else:
                     # STT detected no words - trust voicing detection instead
                     if voicing["voiced_detected"]:
-                        phoneme_match = None  # Ignore phoneme match when STT fails but voicing detected
+                        # Benefit of Doubt: If STT missed it but we have strong voicing AND high AI fluency confidence, assume match.
+                        if score > 0.85:
+                            phoneme_match = True
+                        else:
+                            phoneme_match = None  # Unclear
                     else:
                         phoneme_match = False  # Silence/Hum usually means no word found
 
@@ -589,12 +593,12 @@ def analyze_snake():
                 # If STT found nothing (None), we shouldn't trust simple voicing because blowing can have pitch.
                 # In that case, we rely on the AI model's confidence.
                 if phoneme_match is None:
-                    speech_likely = score > 0.85
+                    # STRICTER: For voiced targets, we require actual voicing signal.
+                    # We removed 'score > 0.85' fallback because it allowed unvoiced "S" to pass for "M".
+                    speech_likely = voicing['voiced_detected']
                 else:
                     # STT found something (True/False) or voicing is strong
-                    speech_likely = voicing["voiced_detected"] or (
-                        phoneme_match is True
-                    )
+                    speech_likely = voicing['voiced_detected'] or (phoneme_match is True)
 
                 if not speech_likely:
                     print(
@@ -735,9 +739,35 @@ def analyze_balloon():
 
 @app.route("/analyze/onetap", methods=["POST"])
 def analyze_onetap():
-    if "file" not in request.files:
-        return jsonify({"error": "No file"}), 400
-    file = request.files["file"]
+    """
+    One-Tap Game Analysis: Word Count + Duration Validation
+    
+    Strategy:
+    - Use Google STT to count words (1 word = success, >1 = repetition)
+    - Validate duration (0.5x to 2.5x expected duration)
+    - Use Wav2Vec as fallback confidence check
+    
+    Expected form data:
+    - audio: Audio file (m4a/wav/mp3)
+    - target_word: Target word (e.g., "Spaghetti")
+    - syllables: JSON array of syllables (e.g., ["Spa", "ghet", "ti"])
+    - duration: Recording duration in seconds
+    """
+    if "audio" not in request.files:
+        return jsonify({"error": "No audio file"}), 400
+    
+    file = request.files["audio"]
+    target_word = request.form.get("target_word", "").strip()
+    syllables_json = request.form.get("syllables", "[]")
+    duration = float(request.form.get("duration", 0))
+    
+    # Parse syllables
+    import json
+    try:
+        syllables = json.loads(syllables_json)
+    except:
+        syllables = []
+    
     filename = secure_filename(file.filename)
     filepath = os.path.join(os.getcwd(), filename)
     file.save(filepath)
@@ -745,21 +775,80 @@ def analyze_onetap():
     try:
         t0 = time.time()
 
-        # Simple AI Check
-        label, score = predict_file(filepath)
-
-        is_stutter = "fluent" not in label.lower()
-        clinical_pass = not is_stutter
-
+        # 1. Google STT for word count
+        transcript = ""
+        word_count = 0
+        stt_confidence = 0.0
+        
+        try:
+            transcript, words_data = get_google_transcript(filepath)
+            transcript = transcript.strip()
+            
+            # Count words (split by spaces, filter empty)
+            word_list = [w for w in transcript.lower().split() if w]
+            word_count = len(word_list)
+            
+            # Average word confidence
+            if words_data:
+                stt_confidence = sum(w.get("confidence", 0) for w in words_data) / len(words_data)
+        except Exception as e:
+            print(f"STT Error: {e}")
+            # Fallback: Use Wav2Vec only
+            word_count = -1  # Unknown
+        
+        # 2. Duration validation
+        # Expected duration: ~0.15s per syllable + 0.5s baseline
+        syllable_count = len(syllables) if syllables else 2
+        expected_duration = (syllable_count * 0.15) + 0.5
+        
+        min_duration = expected_duration * 0.5
+        max_duration = expected_duration * 2.5
+        duration_valid = min_duration <= duration <= max_duration
+        
+        # 3. Wav2Vec check (fluency confidence)
+        label, wav2vec_score = predict_file(filepath)
+        is_fluent = "fluent" in label.lower()
+        
+        # 4. Final decision
+        # Repetition detected if:
+        # - Word count > 1 (clear repetition from STT)
+        # - OR duration too long (suggests multiple attempts)
+        # - OR Wav2Vec detects non-fluent speech
+        repetition_detected = False
+        repetition_probability = 0.0
+        
+        if word_count > 1:
+            # Clear repetition from STT
+            repetition_detected = True
+            repetition_probability = 0.9
+        elif word_count == 1 and duration_valid and is_fluent:
+            # Perfect: One word, good duration, fluent
+            repetition_detected = False
+            repetition_probability = 0.1
+        elif not duration_valid and duration > max_duration:
+            # Took too long (likely repeated)
+            repetition_detected = True
+            repetition_probability = 0.7
+        elif not is_fluent:
+            # Wav2Vec detected disfluency
+            repetition_detected = True
+            repetition_probability = wav2vec_score
+        else:
+            # Edge case: STT failed but Wav2Vec says fluent
+            repetition_detected = False
+            repetition_probability = 0.3
+        
         return jsonify(
             {
-                "stutter_detected": is_stutter,
-                "repetition_detected": is_stutter,  # Legacy field support
-                "clinical_pass": clinical_pass,
-                "confidence": score,
-                "feedback": get_feedback(
-                    "onetap", clinical_pass, "Stutter" if is_stutter else None
-                ),
+                "repetition_detected": repetition_detected,
+                "repetition_probability": repetition_probability,
+                "confidence": max(stt_confidence, wav2vec_score),
+                "word_count": word_count,
+                "transcript": transcript,
+                "duration_valid": duration_valid,
+                "expected_duration": expected_duration,
+                "wav2vec_label": label,
+                "wav2vec_confidence": wav2vec_score,
                 "elapsed_ms": int((time.time() - t0) * 1000),
             }
         )

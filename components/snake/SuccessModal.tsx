@@ -14,13 +14,13 @@ import type { GameMetrics } from '@/hooks/useSnakeGame';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
 import {
-    Animated,
-    Dimensions,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Animated,
+  Dimensions,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -202,15 +202,22 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
                 </Text>
               </View>
             )}
-            {typeof phonemeMatch === 'boolean' && (
+            {/* Phoneme Feedback - Always show for voiced targets if analysis is done */}
+            {!isLoading && isVoicedTarget && (
               <View style={styles.metricRow}>
                 <Text style={styles.metricLabel}>Phoneme:</Text>
                 <Text style={[
                     styles.metricValue,
-                    phonemeMatch ? styles.metricValuePositive : styles.metricValueWarning,
+                    phonemeMatch === true 
+                      ? styles.metricValuePositive 
+                      : styles.metricValueWarning,
                   ]}
                 >
-                  {phonemeMatch ? 'Matched' : 'Try the target sound again'}
+                  {phonemeMatch === true 
+                    ? 'Matched' 
+                    : typeof phonemeMatch === 'boolean' 
+                      ? 'Try the sound again' 
+                      : 'Unclear / Noise'}
                 </Text>
               </View>
             )}
@@ -248,7 +255,7 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
                 </>
               ) : (
                 <>
-                  <Text style={styles.nextButtonText}>Next Level</Text>
+                  <Text style={styles.nextButtonText}>Next</Text>
                   <MaterialCommunityIcons name="chevron-right" size={20} color="#FFFFFF" />
                 </>
               )}

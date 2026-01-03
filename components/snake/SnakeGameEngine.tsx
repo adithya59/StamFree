@@ -201,7 +201,7 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
         ios: {
           ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
           extension: '.wav',
-          outputFormat: Audio.IOSOutputFormat.LinearPCM,
+          outputFormat: Audio.IOSOutputFormat.LINEARPCM,
           audioQuality: Audio.IOSAudioQuality.HIGH,
           sampleRate: 16000, // Match server model
           numberOfChannels: 1,

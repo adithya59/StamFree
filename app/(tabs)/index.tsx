@@ -31,6 +31,22 @@ const exercises: ExerciseTile[] = [
     route: '/exercises/snake-game',
   },
   {
+    id: 'onetap',
+    title: 'One-Tap (Impulse Control)',
+    description: 'Say it once, say it right!',
+    icon: 'owl',
+    color: '#8E44AD',
+    route: '/exercises/onetap-game',
+  },
+  {
+    id: 'balloon',
+    title: 'Balloon (Easy Onset)',
+    description: 'Blow gently and watch it grow!',
+    icon: 'water-percent',
+    color: '#3498DB',
+    route: '/exercises/balloon-game',
+  },
+  {
     id: 'word-games',
     title: 'Word Games',
     description: 'Fun word puzzles and games',

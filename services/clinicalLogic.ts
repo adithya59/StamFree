@@ -29,7 +29,45 @@ export type SnakeResponse = {
   breath_noise_prob?: number;
 };
 
-// ... existing code ...
+export type BalloonResponse = {
+  breath_detected: boolean;
+  amplitude_onset: number;
+  game_pass: boolean;
+  hard_attack_detected: boolean;
+  clinical_pass: boolean;
+  confidence: number;
+  feedback: string;
+};
+
+export type OneTapResponse = {
+  repetition_detected: boolean;
+  repetition_prob: number;
+  clinical_pass: boolean;
+  confidence: number;
+  feedback: string;
+};
+
+export type UnifiedResult = {
+  game_pass: boolean;
+  clinical_pass: boolean;
+  feedback: string;
+  confidence: number;
+  metrics: Record<string, number | boolean>;
+};
+
+export function normalizeTurtle(res: TurtleResponse): UnifiedResult {
+  return {
+    game_pass: res.game_pass,
+    clinical_pass: res.clinical_pass,
+    feedback: res.feedback,
+    confidence: res.confidence,
+    metrics: {
+      wpm: res.wpm,
+      stutter_detected: res.stutter_detected,
+      block_detected: res.block_detected,
+    },
+  };
+}
 
 export function normalizeSnake(res: SnakeResponse): UnifiedResult {
   return {

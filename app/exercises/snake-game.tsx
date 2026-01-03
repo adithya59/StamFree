@@ -3,9 +3,6 @@
  * 
  * Full game screen integrating SnakeGameEngine and SnakePath.
  * Implements core gameplay loop with progress indicator, controls, and post-game flow.
- * 
- * Related: FR-001 through FR-020, US1
- * Task: T023
  */
 
 import { ConfettiAnimation } from '@/components/snake/ConfettiAnimation';
@@ -17,17 +14,19 @@ import { SuccessModal } from '@/components/snake/SuccessModal';
 import { SNAKE_CONFIG } from '@/constants/snakeConfig';
 import type { GameMetrics } from '@/hooks/useSnakeGame';
 import { useSnakeSession } from '@/hooks/useSnakeSession';
+import { getPhonemeVoicePrompt } from '@/services/phonemeVoice';
 import { getInstructionText } from '@/services/snakeProgression';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router, useNavigation } from 'expo-router';
+import * as Speech from 'expo-speech';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, BackHandler, Easing, ImageBackground, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const backgroundImage = require('@/assets/images/jungle-background.png');
 
-type PressableScaleButtonProps = React.PropsWithChildren<{
+type PressableScaleButtonProps = React.PropsWithChildren<{ 
   disabled?: boolean;
   onPress?: () => void | Promise<void>;
   style?: any;
@@ -35,7 +34,7 @@ type PressableScaleButtonProps = React.PropsWithChildren<{
   accessibilityLabel?: string;
 }>;
 
-const PressableScaleButton: React.FC<PressableScaleButtonProps> = ({
+const PressableScaleButton: React.FC<PressableScaleButtonProps> = ({ 
   disabled,
   onPress,
   style,
@@ -114,7 +113,7 @@ export default function SnakeGameScreen() {
   }, []);
 
   // Use Brain logic hook for level management
-  const {
+  const { 
     sessionConfig,
     isLoading: loading,
     isAnalyzing,
@@ -141,12 +140,37 @@ export default function SnakeGameScreen() {
   const engineResetRef = React.useRef<(() => void) | null>(null);
   const pathSeedRef = React.useRef<number>(0);
   const [pathSeed, setPathSeed] = useState<number>(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   // Determine voicing requirement based on category/tier
   const isVoicedTarget = sessionConfig ? (sessionConfig.tier === 1 || sessionConfig.tier === 2) : false;
   
   const speechProb = analysisResult?.aiResult?.confidence as number | undefined;
   const voicedDetected = analysisResult?.aiResult?.metrics?.voiced_detected as boolean | undefined;
+
+  // TTS for instructions
+  useEffect(() => {
+    if (!loading && sessionConfig && !gameStarted && !gameCompleted && !showSuccessModal) {
+      const speakInstructions = async () => {
+        setIsSpeaking(true);
+        const instruction = getInstructionText(sessionConfig.phoneme, sessionConfig.tier, sessionConfig.category);
+        const voicePrompt = getPhonemeVoicePrompt(sessionConfig.example);
+        const fullText = `Deep breath... ${voicePrompt}. ${instruction}`;
+        
+        Speech.speak(fullText, {
+          onDone: () => setIsSpeaking(false),
+          onError: () => setIsSpeaking(false),
+          onStopped: () => setIsSpeaking(false),
+        });
+      };
+      
+      speakInstructions();
+    }
+
+    return () => {
+      Speech.stop();
+    };
+  }, [sessionConfig, loading, gameStarted, gameCompleted, showSuccessModal]);
 
   // Header back button
   React.useLayoutEffect(() => {
@@ -157,6 +181,7 @@ export default function SnakeGameScreen() {
 
   const handleBack = useCallback(() => {
     hapticLight();
+    Speech.stop();
     if (gameStarted && !gameCompleted) {
       Alert.alert(
         'Pause Practice?',
@@ -202,7 +227,6 @@ export default function SnakeGameScreen() {
             setFinalStars(stars);
             
             // Set earned XP for modal display (10 for success, 1 for effort)
-            // Ideally this comes from backend/hook result, but we can infer or pass it
             const xp = stars === 3 ? 10 : 1; 
             setEarnedXp(xp);
 
@@ -553,18 +577,29 @@ export default function SnakeGameScreen() {
                         </Text>
                         <View style={styles.promptButtonContainer}>
                           <PressableScaleButton
-                            style={[styles.button, styles.buttonPrimary, !hasPermission && styles.buttonDisabled]}
+                            style={[
+                              styles.button, 
+                              styles.buttonPrimary, 
+                              (!hasPermission || isSpeaking) && styles.buttonDisabled
+                            ]}
                             onPress={async () => {
                               hapticLight();
+                              Speech.stop();
                               triggerReadyToast();
                               setGameStarted(true);
                               await start();
                             }}
-                            disabled={!hasPermission}
+                            disabled={!hasPermission || isSpeaking}
                             accessibilityLabel="Start"
                           >
-                            <MaterialCommunityIcons name="play" size={32} color="#FFFFFF" />
-                            <Text style={styles.buttonPrimaryText}>Start</Text>
+                            <MaterialCommunityIcons 
+                              name={isSpeaking ? "volume-high" : "play"} 
+                              size={32} 
+                              color="#FFFFFF" 
+                            />
+                            <Text style={styles.buttonPrimaryText}>
+                              {isSpeaking ? "Listen..." : "Start"}
+                            </Text>
                           </PressableScaleButton>
                           {!hasPermission && (
                             <Text style={styles.permissionWarning}>
