@@ -40,6 +40,7 @@ export default function RootLayout() {
         <Stack.Screen name="exercises/turtle-game" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/breathing-exercises" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/word-games" options={{ headerShown: false }} />
+        <Stack.Screen name="editprofile" options={{ headerShown: false }} />
         <Stack.Screen name="demo" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>

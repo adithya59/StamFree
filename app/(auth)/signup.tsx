@@ -39,11 +39,15 @@ export default function CreateAccountScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [speechIssues, setSpeechIssues] = useState<Record<string, boolean>>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null);
 
+  const selectedAvatarImage = useMemo(() => {
+    return profileAvatars.find(a => a.id === selectedAvatar)?.image;
+  }, [selectedAvatar]);
 
   const speechIssueOptions = useMemo(
     () => [
@@ -99,7 +103,7 @@ export default function CreateAccountScreen() {
   const handleCreateAccount = async () => {
     if (!validateForm()) return;
     if (!selectedAvatar) {
-      Alert.alert('Please select a profile avatar');
+      Alert.alert('Selection Required', 'Please choose a cute animal avatar for your child!');
       return;
     }
     setLoading(true);
@@ -221,29 +225,25 @@ export default function CreateAccountScreen() {
               />
             </View>
 
-            <Text style={styles.sectionTitle}>Choose a Profile Avatar</Text>
-            <Text style={styles.helperText}>
-              Select a cute animal icon for your child.
-            </Text>
-
-            <View style={styles.avatarGrid}>
-              {profileAvatars.map((avatar) => {
-                const isSelected = selectedAvatar === avatar.id;
-
-                return (
-                  <TouchableOpacity
-                    key={avatar.id}
-                    style={[
-                      styles.avatarItem,
-                      isSelected && styles.avatarSelected,
-                    ]}
-                    onPress={() => setSelectedAvatar(avatar.id)}
-                    disabled={loading}
-                  >
-                    <Image source={avatar.image} style={styles.avatarImage} />
-                  </TouchableOpacity>
-                );
-              })}
+            <View style={styles.avatarSelectionContainer}>
+              <Text style={styles.label}>Child's Avatar *</Text>
+              <TouchableOpacity 
+                style={styles.avatarPickerTrigger}
+                onPress={() => setShowAvatarModal(true)}
+                disabled={loading}
+              >
+                {selectedAvatar ? (
+                  <View style={styles.selectedAvatarPreview}>
+                    <Image source={selectedAvatarImage} style={styles.avatarPreviewImage} />
+                    <Text style={styles.changeAvatarText}>Change Avatar</Text>
+                  </View>
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Ionicons name="happy-outline" size={32} color="#1a73e8" />
+                    <Text style={styles.avatarPlaceholderText}>Choose a friendly face</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             </View>
 
             <Text style={styles.sectionTitle}>Parent Details</Text>
@@ -396,6 +396,49 @@ export default function CreateAccountScreen() {
         </View>
       </ScrollView>
 
+      {/* Avatar Selection Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showAvatarModal}
+        onRequestClose={() => setShowAvatarModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, styles.avatarModalContent]}>
+            <Text style={styles.modalTitle}>Pick an Avatar</Text>
+            <Text style={styles.modalMessage}>Choose a friendly face for your adventure!</Text>
+            
+            <View style={styles.avatarGrid}>
+              {profileAvatars.map((avatar) => {
+                const isSelected = selectedAvatar === avatar.id;
+                return (
+                  <TouchableOpacity
+                    key={avatar.id}
+                    style={[
+                      styles.avatarItem,
+                      isSelected && styles.avatarSelected,
+                    ]}
+                    onPress={() => {
+                      setSelectedAvatar(avatar.id);
+                      setShowAvatarModal(false);
+                    }}
+                  >
+                    <Image source={avatar.image} style={styles.avatarImage} />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.modalButton, { backgroundColor: '#666' }]}
+              onPress={() => setShowAvatarModal(false)}
+            >
+              <Text style={styles.modalButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         animationType="fade"
         transparent={true}
@@ -409,14 +452,16 @@ export default function CreateAccountScreen() {
             </View>
             <Text style={styles.modalTitle}>Success!</Text>
             <Text style={styles.modalMessage}>
-              Your account has been created successfully. Please verify your
-              email address to continue.
+              Your account has been created successfully. Welcome to StamFree!
             </Text>
             <TouchableOpacity
               style={styles.modalButton}
-              onPress={handleSuccessContinue}
+              onPress={() => {
+                setShowSuccessModal(false);
+                router.replace("/(tabs)");
+              }}
             >
-              <Text style={styles.modalButtonText}>Verify Email</Text>
+              <Text style={styles.modalButtonText}>Go to Dashboard</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -585,7 +630,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(255, 255, 255, 0.85)",
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
@@ -602,6 +647,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
+  },
+  avatarModalContent: {
+    maxWidth: 380,
   },
   modalIconContainer: {
     width: 60,
@@ -640,11 +688,48 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
+  avatarSelectionContainer: {
+    marginBottom: 20,
+  },
+  avatarPickerTrigger: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: '#f9f9f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 100,
+  },
+  selectedAvatarPreview: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  avatarPreviewImage: {
+    width: 80,
+    height: 80,
+    resizeMode: 'contain',
+  },
+  changeAvatarText: {
+    color: '#1a73e8',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  avatarPlaceholder: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  avatarPlaceholderText: {
+    color: '#1a73e8',
+    fontWeight: '600',
+    fontSize: 16,
+  },
   avatarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
+    gap: 16,
+    justifyContent: 'center',
+    marginBottom: 24,
   },
   avatarItem: {
     width: 72,

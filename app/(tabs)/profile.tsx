@@ -3,10 +3,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { deleteUser, signOut } from 'firebase/auth';
-import { deleteDoc, doc, getDoc } from 'firebase/firestore';
+import { deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 
 const avatarMap: Record<string, any> = {
   bear: require('@/assets/profilepictures/bear.png'),
@@ -71,30 +70,23 @@ export default function ProfileScreen() {
   );
 }, []);
 
-  useFocusEffect(
-  React.useCallback(() => {
-    const fetchProfile = async () => {
-      try {
-        setLoading(true);
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
 
-        const user = auth.currentUser;
-        if (!user) return;
-
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-
-        if (userDoc.exists()) {
-          setProfile(userDoc.data());
-        }
-      } catch (error) {
-        console.warn('Failed to fetch profile:', error);
-      } finally {
-        setLoading(false);
+    // Use onSnapshot for real-time updates and caching
+    const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (doc) => {
+      if (doc.exists()) {
+        setProfile(doc.data());
       }
-    };
+      setLoading(false);
+    }, (error) => {
+      console.warn('Failed to fetch profile:', error);
+      setLoading(false);
+    });
 
-    fetchProfile();
-  }, [])
-);
+    return () => unsubscribe();
+  }, []);
 
 
   if (loading) {
@@ -112,7 +104,7 @@ export default function ProfileScreen() {
           {profile?.avatarId && (
             <Image
               source={avatarMap[profile.avatarId]}
-              style={{ width: 80, height: 80 }}
+              style={{ width: 105, height: 85, resizeMode: 'contain' }}
             />
           )}
         </View>
@@ -122,7 +114,7 @@ export default function ProfileScreen() {
 
       <View style={styles.settingsContainer}>
         <View style={styles.settingCard}>
-          <Text style={styles.settingLabel}>Display Name</Text>
+          <Text style={styles.settingLabel}>Child's Name</Text>
           <Text style={styles.settingValue}>{profile?.childName}</Text>
         </View>
 
@@ -161,13 +153,6 @@ export default function ProfileScreen() {
           <Text style={styles.logoutButtonText}>Logout</Text>
         </TouchableOpacity>
       </View>
-
-      <View style={styles.infoCard}>
-        <Text style={styles.infoTitle}>Account Settings</Text>
-        <Text style={styles.infoText}>• Manage your profile information</Text>
-        <Text style={styles.infoText}>• View and update speech focus areas</Text>
-        <Text style={styles.infoText}>• Access parental controls</Text>
-      </View>
     </View>
   );
 }
@@ -179,7 +164,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 60,
     paddingBottom: 32,
     backgroundColor: '#fff',
     alignItems: 'center',

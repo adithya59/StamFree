@@ -21,8 +21,37 @@ export async function startRecording() {
     });
 
     // 2. Create and prepare the recording
+    const recordingOptions = {
+      ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      android: {
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
+        extension: '.m4a',
+        outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+        audioEncoder: Audio.AndroidAudioEncoder.AAC,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        bitRate: 64000,
+      },
+      ios: {
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+        extension: '.wav',
+        outputFormat: Audio.IOSOutputFormat.LinearPCM,
+        audioQuality: Audio.IOSAudioQuality.HIGH,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        bitRate: 128000,
+        linearPCMBitDepth: 16,
+        linearPCMIsBigEndian: false,
+        linearPCMIsFloat: false,
+      },
+      web: {
+        mimeType: 'audio/webm',
+        bitsPerSecond: 128000,
+      },
+    };
+
     const { recording: newRecording } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY
+      recordingOptions
     );
     
     recording = newRecording;

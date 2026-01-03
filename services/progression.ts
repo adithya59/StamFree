@@ -1,11 +1,10 @@
 export type GameId = 'turtle' | 'snake' | 'balloon' | 'onetap';
 
 export type TurtleMetrics = { wpm: number };
-export type SnakeMetrics = { duration_sec: number };
 export type BalloonMetrics = { amplitude_start: number; soft_onset?: boolean };
 export type OneTapMetrics = { repetition_prob: number };
 
-export type Metrics = TurtleMetrics | SnakeMetrics | BalloonMetrics | OneTapMetrics;
+export type Metrics = TurtleMetrics | BalloonMetrics | OneTapMetrics;
 
 export type RuleTierLevel = {
   targetWPM?: number;
@@ -27,7 +26,6 @@ export type GameRules = {
 
 const defaults = {
   turtle: { targetWPM: 100, tolerance: 20 },
-  snake: { minDurationSec: 1.5 },
   balloon: { maxAmplitudeStart: 0.3 },
   onetap: { maxRepetitionProb: 0.2 },
 };
@@ -57,17 +55,6 @@ export function computeHitMiss(
       const rangeMax = target + tol;
       const didSucceed = wpm >= rangeMin && wpm <= rangeMax;
       return { didSucceed, rawScore: wpm };
-    }
-    case 'snake': {
-      if (typeof game_pass === 'boolean' && typeof clinical_pass === 'boolean') {
-        const didSucceed = game_pass && clinical_pass;
-        const durationCombined = (metrics as SnakeMetrics).duration_sec ?? 0;
-        return { didSucceed, rawScore: durationCombined };
-      }
-      const duration = (metrics as SnakeMetrics).duration_sec;
-      const minDur = tierConfig.minDurationSec ?? defaults.snake.minDurationSec;
-      const didSucceed = duration >= minDur;
-      return { didSucceed, rawScore: duration };
     }
     case 'balloon': {
       if (typeof game_pass === 'boolean' && typeof clinical_pass === 'boolean') {

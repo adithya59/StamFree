@@ -14,14 +14,13 @@ import { RetryModal } from '@/components/snake/RetryModal';
 import { SnakeGameEngine } from '@/components/snake/SnakeGameEngine';
 import { SnakePath } from '@/components/snake/SnakePath';
 import { SuccessModal } from '@/components/snake/SuccessModal';
-import { isVoicedPhoneme } from '@/constants/phonemes';
 import { SNAKE_CONFIG } from '@/constants/snakeConfig';
 import type { GameMetrics } from '@/hooks/useSnakeGame';
 import { useSnakeSession } from '@/hooks/useSnakeSession';
 import { getInstructionText } from '@/services/snakeProgression';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, BackHandler, Easing, ImageBackground, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -105,11 +104,9 @@ const useHaptics = () => {
 
 export default function SnakeGameScreen() {
   const navigation = useNavigation();
-  const params = useLocalSearchParams();
   const { light: hapticLight, medium: hapticMedium, success: hapticSuccess, warning: hapticWarning } = useHaptics();
   const readyToastOpacity = React.useRef(new Animated.Value(0)).current;
 
-  // Memoize error handler to prevent infinite loop in useSnakeSession
   const handleSessionError = React.useCallback((error: Error) => {
     console.error('[SnakeGame] Session error:', error);
     Alert.alert('Error', 'Failed to load level. Returning to menu.');
@@ -118,15 +115,12 @@ export default function SnakeGameScreen() {
 
   // Use Brain logic hook for level management
   const {
-    level,
-    userProgress,
+    sessionConfig,
     isLoading: loading,
     isAnalyzing,
-    loadLevel,
-    completeLevel,
-    handleFailure,
+    loadSession,
+    completeSession,
   } = useSnakeSession({
-    levelId: params.levelId as string | undefined,
     onError: handleSessionError,
   });
 
@@ -148,8 +142,10 @@ export default function SnakeGameScreen() {
   const pathSeedRef = React.useRef<number>(0);
   const [pathSeed, setPathSeed] = useState<number>(0);
 
-  const isVoicedTarget = level ? isVoicedPhoneme(level.targetPhonemes?.[0]) : false;
-  const speechProb = analysisResult?.aiResult?.confidence as number | undefined; // Overall performance confidence
+  // Determine voicing requirement based on category/tier
+  const isVoicedTarget = sessionConfig ? (sessionConfig.tier === 1 || sessionConfig.tier === 2) : false;
+  
+  const speechProb = analysisResult?.aiResult?.confidence as number | undefined;
   const voicedDetected = analysisResult?.aiResult?.metrics?.voiced_detected as boolean | undefined;
 
   // Header back button
@@ -163,11 +159,11 @@ export default function SnakeGameScreen() {
     hapticLight();
     if (gameStarted && !gameCompleted) {
       Alert.alert(
-        'Leave Game?',
-        'Your progress will be lost. Are you sure?',
+        'Pause Practice?',
+        "You're doing great! If you leave now, this session's progress won't be saved.",
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Leave', style: 'destructive', onPress: () => router.back() },
+          { text: 'Keep Playing', style: 'cancel' },
+          { text: 'End Session', style: 'destructive', onPress: () => router.back() },
         ]
       );
     } else {
@@ -183,11 +179,9 @@ export default function SnakeGameScreen() {
     setCompletionReason('win');
     setShowRetryModal(false);
     setShowConfetti(true);
-    // Show 0 stars initially while analyzing
     setOptimisticStars(0);
     setFinalStars(undefined);
     setDisplayFeedback('🎉 You did it! Let me listen to your amazing voice...');
-    // Don't show modal yet - wait for confetti to finish
     setShowSuccessModal(false);
   }, [hapticSuccess]);
 
@@ -197,20 +191,29 @@ export default function SnakeGameScreen() {
 
     const runAnalysis = async () => {
       try {
-        const result = await completeLevel(finalMetrics, audioUri);
+        const result = await completeSession(finalMetrics, audioUri);
         setOptimisticStars(result.optimisticStars);
 
         // Wait for AI analysis in background
         const analysisData = await result.analysisPromise;
-        if (analysisData) {
-          setFinalStars(analysisData.aiResult?.stars ?? result.optimisticStars);
-          setDisplayFeedback(
-            analysisData.aiResult?.feedback ??
-              'Great effort! Let\'s analyze this one next time.'
-          );
-          setEarnedXp(analysisData.xp);
-          setAnalysisResult(analysisData);
-        }
+          if (analysisData) {
+            // AI Result logic
+            const stars = analysisData.aiResult?.stars ?? result.optimisticStars;
+            setFinalStars(stars);
+            
+            // Set earned XP for modal display (10 for success, 1 for effort)
+            // Ideally this comes from backend/hook result, but we can infer or pass it
+            const xp = stars === 3 ? 10 : 1; 
+            setEarnedXp(xp);
+
+            let feedback = analysisData.aiResult?.feedback ?? 'Great effort!';
+            if (analysisData.leveledUp) {
+              feedback = `Mastered! New sound unlocked: ${analysisData.nextPhoneme || 'Next one!'}`;
+            }
+            
+            setDisplayFeedback(feedback);
+            setAnalysisResult(analysisData);
+          }
       } catch (error) {
         console.error('[SnakeGame] Analysis error:', error);
         const fallback = {
@@ -223,8 +226,7 @@ export default function SnakeGameScreen() {
     };
 
     runAnalysis();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completionReason, finalMetrics, audioUri]);
+  }, [completionReason, finalMetrics, audioUri, completeSession]);
 
   const handleTimeout = useCallback((metrics: GameMetrics) => {
     console.log('[SnakeGame] Timeout!', metrics);
@@ -252,8 +254,6 @@ export default function SnakeGameScreen() {
 
   const handleAudioError = useCallback((error: Error) => {
     console.error('[SnakeGame] Audio error:', error);
-    
-    // FR-017: Handle permission errors
     if (error.message.includes('permission')) {
       Alert.alert(
         'Microphone Needed',
@@ -314,50 +314,38 @@ export default function SnakeGameScreen() {
   const handleContinue = useCallback(() => {
     setShowSuccessModal(false);
 
-    if (!level || !analysisResult) {
+    if (!sessionConfig) {
       router.back();
       return;
     }
 
-    const nextLevel = analysisResult.nextLevel;
-
-    if (nextLevel) {
-      // Reload with new level instead of router.push (avoids stack buildup)
-      pathSeedRef.current += 1;
-      setPathSeed(pathSeedRef.current);
-      setGameStarted(false);
-      setGameCompleted(false);
-      setFinalMetrics(null);
-      setAudioUri(null);
-      setShowSuccessModal(false);
-      setShowRetryModal(false);
-      setShowConfetti(false);
-      setAnalysisResult(null);
-      loadLevel(nextLevel.levelId);
-    } else {
-      // No more levels - go back
-      router.back();
-    }
-  }, [level, analysisResult, loadLevel]);
+    pathSeedRef.current += 1;
+    setPathSeed(pathSeedRef.current);
+    setGameStarted(false);
+    setGameCompleted(false);
+    setFinalMetrics(null);
+    setAudioUri(null);
+    setShowSuccessModal(false);
+    setShowRetryModal(false);
+    setShowConfetti(false);
+    setAnalysisResult(null);
+    loadSession(); 
+  }, [sessionConfig, loadSession]);
 
   const handleCloseSuccessModal = useCallback(() => {
     setShowSuccessModal(false);
     router.back();
   }, []);
 
-  // Handle hardware back button when success modal is visible
   useEffect(() => {
     if (!showSuccessModal) return;
-
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
       handleCloseSuccessModal();
-      return true; // Prevent default behavior
+      return true;
     });
-
     return () => backHandler.remove();
   }, [showSuccessModal, handleCloseSuccessModal]);
 
-  // Subtle entrance animation for header and cards
   const introAnim = React.useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(introAnim, {
@@ -394,9 +382,8 @@ export default function SnakeGameScreen() {
         </View>
       )}
 
-      {!loading && level && (
+      {!loading && sessionConfig && (
         <>
-          {/* T027: Retry Modal with encouragement */}
           {completionReason !== 'win' && (
             <RetryModal
               visible={showRetryModal}
@@ -409,7 +396,6 @@ export default function SnakeGameScreen() {
             />
           )}
 
-          {/* T030: Pause Overlay with resume/quit options and auto-reset timer */}
           {finalMetrics && (
             <PauseOverlay
               visible={showPauseOverlay}
@@ -426,7 +412,6 @@ export default function SnakeGameScreen() {
             />
           )}
 
-          {/* T025: Success Modal with stars and AI feedback (optimistic → final) */}
           {finalMetrics && (
             <SuccessModal
               visible={showSuccessModal}
@@ -436,8 +421,8 @@ export default function SnakeGameScreen() {
               finalStars={finalStars}
               isLoading={isAnalyzing}
               feedback={displayFeedback}
-              xpReward={earnedXp ?? level.xpReward}
-              totalXp={userProgress?.totalXP || 0}
+              xpReward={earnedXp ?? 10} 
+              totalXp={analysisResult?.totalXp || 0} 
               phonemeMatch={analysisResult?.aiResult?.metrics?.phoneme_match as boolean | undefined}
               speechProb={speechProb}
               voicedDetected={voicedDetected}
@@ -448,7 +433,6 @@ export default function SnakeGameScreen() {
             />
           )}
 
-          {/* Confetti Animation on win */}
           {showConfetti && (
             <ConfettiAnimation
               duration={3000}
@@ -459,13 +443,12 @@ export default function SnakeGameScreen() {
             />
           )}
 
-          {/* GAME VIEWPORT CARD */}
           <SnakeGameEngine
             pathLength={100}
             levelConfig={{
-              targetDurationSec: level.targetDurationSec,
-              allowPauses: level.allowPauses,
-              maxPauseDuration: level.maxPauseDuration,
+              targetDurationSec: sessionConfig.targetDuration,
+              allowPauses: false,
+              maxPauseDuration: 0.5,
             }}
             voicingRequired={isVoicedTarget}
             onWin={handleWin}
@@ -476,25 +459,19 @@ export default function SnakeGameScreen() {
           >
             {({
               gameState,
-              completionPercentage,
-              currentAmplitude,
               isRunning,
               isPaused,
               start,
-              stop,
               pause,
               resume,
               reset,
               hasPermission,
-              perfStats,
             }) => (
               <View style={{ flex: 1, flexDirection: 'column' }}>
-                {/* FLOATING HEADER - Pause Button & Level Pill */}
                 <Animated.View 
                   style={[styles.floatingHeader, headerEntranceStyle]} 
                   pointerEvents="box-none"
                 >
-                  {/* Back Button (Top Left) - Always accessible */}
                   <PressableScaleButton
                     style={styles.backButton}
                     onPress={showSuccessModal ? handleCloseSuccessModal : handleBack}
@@ -507,15 +484,14 @@ export default function SnakeGameScreen() {
                   <View style={styles.levelGroup}>
                     <View style={styles.levelPill}>
                       <Text style={styles.levelPillText}>
-                        Level {level.tier}-{level.levelId.split('_')[2] || '1'}
+                        Sound: {sessionConfig.phoneme}
                       </Text>
                       <Text style={styles.levelPillSubtext}>
-                        {Math.round((userProgress?.totalXP || 0) / 100)}★
+                        Tier {sessionConfig.tier}
                       </Text>
                     </View>
                   </View>
 
-                  {/* Pause Button (Top Right) */}
                   <PressableScaleButton
                     style={styles.pauseButton}
                     onPress={async () => {
@@ -539,20 +515,17 @@ export default function SnakeGameScreen() {
                   </PressableScaleButton>
                 </Animated.View>
 
-                {/* GAME VIEWPORT CARD */}
                 <Animated.View style={[styles.gameViewportCard, cardEntranceStyle]}>
                   {(() => {
                     engineResetRef.current = reset;
                     return null;
                   })()}
 
-                  {/* Background with Snake Path */}
                   <ImageBackground
                     source={backgroundImage}
                     style={styles.gameBackground}
                     resizeMode="cover"
                   >
-                    {/* Snake Path with Avatar - FR-001, FR-003, FR-015, FR-016 */}
                     <SnakePath
                       position={gameState.position / 100}
                       isMoving={isRunning && !isPaused && !gameState.isHalted}
@@ -570,14 +543,13 @@ export default function SnakeGameScreen() {
                     </View>
                   )}
 
-                  {/* Prompt overlay when not started */}
                   {!gameStarted && !gameCompleted && (
                     <View style={styles.promptOverlay}>
                       <View style={styles.promptCard}>
-                        <Text style={styles.promptTitle}>Say this sound:</Text>
-                        <Text style={styles.promptPhoneme}>{level.contentExample}</Text>
+                        <Text style={styles.promptTitle}>Deep breath...</Text>
+                        <Text style={styles.promptPhoneme}>{sessionConfig.example}</Text>
                         <Text style={styles.promptInstruction}>
-                          {getInstructionText(level)} for {level.targetDurationSec} seconds!
+                          {getInstructionText(sessionConfig.phoneme, sessionConfig.tier, sessionConfig.category)}
                         </Text>
                         <View style={styles.promptButtonContainer}>
                           <PressableScaleButton
@@ -604,19 +576,17 @@ export default function SnakeGameScreen() {
                     </View>
                   )}
 
-                  {/* Sleep prompt overlay - FR-015 */}
                   {gameState.showSleepOverlay && isRunning && (
                     <View style={styles.sleepPromptOverlay}>
                       <View style={styles.sleepPromptCard}>
                         <Text style={styles.sleepPromptEmoji}>😴</Text>
                         <Text style={styles.sleepPromptText}>
-                          Wake up the snake! Keep saying your sound
+                          Wake up the snake! Keep saying {sessionConfig.phoneme}...
                         </Text>
                       </View>
                     </View>
                   )}
 
-                  {/* Completion overlay */}
                   {gameCompleted && finalMetrics && completionReason !== 'win' && (
                     <View style={styles.completionOverlay}>
                       <View style={styles.completionCard}>
@@ -662,33 +632,11 @@ export default function SnakeGameScreen() {
                   )}
                 </Animated.View>
 
-                {/* CONTROL DECK CARD (Bottom) */}
                 <Animated.View style={[styles.controlDeckCard, cardEntranceStyle]}>
-                  {/* <Animated.View pointerEvents="none" style={[styles.readyToast, { opacity: readyToastOpacity }]}> 
-                    <Text style={styles.readyToastText}>Ready</Text>
-                  </Animated.View> */}
-                  {/* Sentence / Prompt Display */}
                   <View style={styles.sentenceCard}>
                     <Text style={styles.sentenceLabel}>Say:</Text>
-                    <Text style={styles.sentenceText}>{level.contentExample}</Text>
+                    <Text style={styles.sentenceText}>{sessionConfig.example}</Text>
                   </View>
-                  {/* Real-time Visualizer (FR-005) */}
-                  {/* <View style={styles.visualizerContainer}>
-                    {Array.from({ length: 16 }).map((_, i) => {
-                      const height = Math.max(4, Math.round((i % 4 + 1) * 8 * (gameState.lastAmplitude || 0)));
-                      const active = (gameState.lastAmplitude || 0) >= 0.5;
-                      return (
-                        <View
-                          key={i}
-                          style={[
-                            styles.visualizerBar,
-                            { height },
-                            active ? styles.visualizerBarActive : styles.visualizerBarIdle,
-                          ]}
-                        />
-                      );
-                    })}
-                  </View> */}
                 </Animated.View>
               </View>
             )}
@@ -705,8 +653,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FFF0',
     flexDirection: 'column',
   },
-  
-  /* ============ FLOATING HEADER ============ */
   floatingHeader: {
     height: 56,
     flexDirection: 'row',
@@ -787,8 +733,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#8a6d00',
   },
-  
-  /* ============ GAME VIEWPORT CARD ============ */
   gameViewportCard: {
     flex: 1,
     margin: 12,
@@ -804,13 +748,11 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 6,
   },
-
   gameBackground: {
     flex: 1,
     width: '100%',
     height: '100%',
   },
-
   pausedTint: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(12, 18, 28, 0.12)',
@@ -823,8 +765,6 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     letterSpacing: 0.5,
   },
-  
-  /* ============ CONTROL DECK CARD ============ */
   controlDeckCard: {
     backgroundColor: '#F9FBFF',
     borderRadius: 18,
@@ -840,8 +780,6 @@ const styles = StyleSheet.create({
     elevation: 6,
     position: 'relative',
   },
-  
-  /* ============ GAME CONTAINER (Legacy) ============ */
   gameContainer: {
     flex: 1,
   },
@@ -908,8 +846,6 @@ const styles = StyleSheet.create({
     right: 12,
     alignItems: 'flex-end',
   },
-  
-  /* ============ OVERLAYS & PROMPTS ============ */
   promptOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
@@ -1015,8 +951,6 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 20,
   },
-  
-  /* ============ CONTROLS & BUTTONS ============ */
   controlsContainer: {
     padding: 16,
     gap: 12,
@@ -1088,8 +1022,6 @@ const styles = StyleSheet.create({
     color: '#DC3545',
     fontWeight: 'bold',
   },
-  
-  /* ============ SENTENCE CARD ============ */
   sentenceCard: {
     marginHorizontal: 16,
     marginTop: 12,
