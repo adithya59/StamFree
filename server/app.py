@@ -328,45 +328,150 @@ def analyze_audio():
 # --- EXERCISE ENDPOINTS (Fully Restored Logic) ---
 
 @app.route('/analyze/turtle', methods=['POST'])
+
 def analyze_turtle():
-    if 'file' not in request.files: return jsonify({'error': 'No file'}), 400
+
+    # 1. Handle File Upload
+
+    if 'file' not in request.files:
+
+        return jsonify({'error': 'No file'}), 400
+
+   
+
     file = request.files['file']
+
     filename = secure_filename(file.filename)
+
     filepath = os.path.join(os.getcwd(), filename)
+
     file.save(filepath)
 
-    try:
-        t0 = time.time()
-        
-        # 1. AI Check (Wav2Vec)
-        label, score = predict_file(filepath)
-        
-        is_stutter = "fluent" not in label.lower()
-        block_detected = "block" in label.lower()
-        
-        # 2. WPM Check
-        text, words = get_google_transcript(filepath)
-        wpm = calculate_wpm(words) if words else 0
-        
-        game_pass = wpm < 120 and wpm > 0
-        clinical_pass = not block_detected
-        is_hit = game_pass and clinical_pass
-        
-        elapsed_ms = int((time.time() - t0) * 1000)
-        return jsonify({
-            'wpm': wpm, 'game_pass': game_pass,
-            'stutter_detected': is_stutter, 'block_detected': block_detected,
-            'clinical_pass': clinical_pass, 'confidence': score,
-            'feedback': get_feedback('turtle', is_hit, 'Block' if block_detected else None),
-            'elapsed_ms': elapsed_ms
-        })
-    finally:
-        if os.path.exists(filepath): 
-            try: os.remove(filepath)
-            except: pass
 
+
+    try:
+
+        t0 = time.time()
+
+       
+
+        # 2. Run Wav2Vec AI Prediction (Correctness)
+
+        # predict_file loads audio and compares it against your dataset model
+
+        label, score = predict_file(filepath)
+
+       
+
+        # Buffer: Only trigger 'block' if the AI is very confident
+
+        is_stutter = "fluent" not in label.lower()
+
+        block_detected = "block" in label.lower() and score > 0.75
+
+       
+
+        # 3. Run Google STT & WPM Check (Speed)
+
+        # get_google_transcript provides word-level timestamps
+
+        text, words = get_google_transcript(filepath)
+
+        wpm = calculate_wpm(words) if words else 0
+
+       
+
+        # 4. TERMINAL LOGGING (Debug view for you to see possibilities)
+
+        print("\n" + "🐢" * 15)
+
+        print(f"DEBUG ANALYSIS: {filename}")
+
+        print(f"WORD SAID: '{text}'")
+
+        print(f"SPEED: {wpm} WPM (Target: < 130)") #
+
+        print(f"AI LABEL: {label}")
+
+        print(f"CONFIDENCE: {score:.4f}")
+
+        print(f"BLOCK DETECTED: {block_detected}")
+
+        print("🐢" * 15 + "\n")
+
+
+
+        # 5. Define Passing Conditions
+
+        # Relaxed WPM limit (130) makes it easier for kids to pass
+
+        game_pass = 0 < wpm < 130
+
+        clinical_pass = not block_detected
+
+       
+
+        # The turtle jumps if BOTH conditions are met
+
+        is_hit = game_pass and clinical_pass
+
+       
+
+        elapsed_ms = int((time.time() - t0) * 1000)
+
+       
+
+        # 6. Return Response to React Native App
+
+        return jsonify({
+
+            'wpm': wpm,
+
+            'game_pass': game_pass,
+
+            'stutter_detected': is_stutter,
+
+            'block_detected': block_detected,
+
+            'clinical_pass': clinical_pass,
+
+            'confidence': score,
+
+            'transcript': text,
+
+            'feedback': get_feedback('turtle', is_hit, 'Block' if block_detected else None),
+
+            'elapsed_ms': elapsed_ms
+
+        })
+
+
+
+    except Exception as e:
+
+        print(f"❌ Server Error in analyze_turtle: {e}")
+
+        return jsonify({'error': str(e)}), 500
+
+
+
+    finally:
+
+        # 7. Cleanup: Delete audio file to save space
+
+        if os.path.exists(filepath):
+
+            try:
+
+                os.remove(filepath)
+
+            except:
+
+                pass
+
+                     
 @app.route('/analyze/snake', methods=['POST'])
-def analyze_snake():
+def  analyze_snake():
     # Supports both field names for compatibility
     file = request.files.get('file') or request.files.get('audioFile')
     if not file:

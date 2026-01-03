@@ -1,163 +1,256 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Speech from 'expo-speech'; // Ensure expo-speech is installed
-import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Image, ImageBackground, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { startRecording, stopRecording } from '../../services/audioService';
+import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-export default function TalkingTurtle() {
-  const words = ['Apple', 'Banana', 'Tiger', 'Sun']; // The word list for the level
+import {
+  startRecording,
+  stopRecording,
+  uploadTurtleAudio,
+} from '../../services/audioService';
+
+export default function TurtleWoodsAdventure() {
+  const sentences = [
+    'The quick fox jumps!',
+    'I love the green woods.',
+    'The turtle walks fast today!',
+    'Look at the tall trees.',
+  ];
+
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [feedback, setFeedback] = useState('🐢 Help the turtle reach the end of the road!');
+  const [feedback, setFeedback] = useState(
+    '🚀 Say the sentence fast and smooth!'
+  );
+  const [isLoading, setIsLoading] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
-  
-  const targetWord = words[currentIndex];
-  
-  // Turtle positioning
-  const verticalAnim = useRef(new Animated.Value(-200)).current; 
-  const scaleAnim = useRef(new Animated.Value(0.6)).current;
-  
-  // Progress Bar Width
-  const progressAnim = useRef(new Animated.Value(0)).current;
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
 
+  const videoSource = require('../../assets/images/turtle1.mp4');
+  const player = useVideoPlayer(videoSource, (player) => {
+    player.loop = false;
+    player.pause();
+  });
+
+  // Cleanup effect to stop recording if the component unmounts
   useEffect(() => {
-    // Update progress bar whenever the index changes
-    Animated.timing(progressAnim, {
-      toValue: (currentIndex / words.length) * 100,
-      duration: 500,
-      useNativeDriver: false,
-    }).start();
-  }, [currentIndex]);
-
-  const handleSpeakResult = async () => {
-    const audioUri = await stopRecording();
-    if (!audioUri) return;
-
-    try {
-      // TODO: Implement transcription using backend API
-      // For now, auto-succeed for testing
-      const isCorrect = true;
-
-      if (isCorrect) {
-        processSuccess();
-      } else {
-        setFeedback('Almost! Try saying it again slowly 🐢');
-        Speech.speak('Almost! Try saying it again slowly.'); // Turtle voice
+    return () => {
+      if (recording) {
+        stopRecording(recording).catch((err) =>
+          console.error('Failed to stop recording on unmount', err)
+        );
       }
+    };
+  }, [recording]);
+
+  const handleStartRecording = async () => {
+    if (recording) {
+      setFeedback('🔴 Already recording! Press the checkmark when done.');
+      return;
+    }
+    try {
+      setFeedback('🎤 Recording... Speak now!');
+      const newRecording = await startRecording();
+      setRecording(newRecording);
     } catch (error) {
-      setFeedback("The jungle is noisy! Try again? 🐢");
+      setFeedback('🐢 Mic error! Please try again.');
+      Alert.alert(
+        'Microphone Error',
+        'Could not start recording. Please make sure you have granted microphone permissions.'
+      );
     }
   };
 
-  const processSuccess = () => {
-    setFeedback('WOW! You said it! 🐢 JUMP!');
-    Speech.speak('Perfect! Watch me go!');
-
-    // Move turtle forward
-    const currentVertical = (verticalAnim as any)._value || -200 + (currentIndex * 120);
-    const currentScale = (scaleAnim as any)._value || 0.6 + (currentIndex * 0.15);
-    
-    Animated.parallel([
-      Animated.timing(verticalAnim, {
-        toValue: currentVertical + 120,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: currentScale + 0.15,
-        duration: 1000,
-        useNativeDriver: true,
-      })
-    ]).start(() => {
-      if (currentIndex + 1 < words.length) {
-        setCurrentIndex(currentIndex + 1);
-      } else {
-        setIsFinished(true); // Game Complete!
+  const handleStopRecording = async () => {
+    if (isLoading || !recording) {
+      if (!recording) {
+        setFeedback('Press the mic to start recording first!');
       }
-    });
+      return;
+    }
+
+    setIsLoading(true);
+    setFeedback('🐢 Checking your speech...');
+
+    try {
+      const audioUri = await stopRecording(recording);
+      setRecording(null); // Clear the recording object
+
+      if (!audioUri) {
+        throw new Error('Failed to get audio file.');
+      }
+
+      const result = await uploadTurtleAudio(audioUri);
+      setIsLoading(false);
+
+      if (result && result.is_hit) {
+        handleSuccess();
+      } else {
+        let newFeedback = '🐢 Almost! Keep it smooth and fast!';
+        if (result?.wpm < 110) {
+          newFeedback = '🐢 A bit slow! Try speaking faster next time!';
+        }
+        setFeedback(newFeedback);
+        Speech.speak(newFeedback);
+      }
+    } catch (error) {
+      setIsLoading(false);
+      setRecording(null); // Also clear on error
+      setFeedback('🐢 Error analyzing speech. Try again!');
+      Alert.alert(
+        'Analysis Error',
+        'There was a problem analyzing your speech.'
+      );
+    }
+  };
+
+  const handleSuccess = () => {
+    setFeedback('🏆 AMAZING! Watch the turtle go!');
+    Speech.speak('Perfect speed!');
+
+    player.play();
+
+    setTimeout(() => {
+      player.pause();
+
+      if (currentIndex + 1 < sentences.length) {
+        setCurrentIndex(currentIndex + 1);
+        setFeedback('🚀 Next sentence! Ready?');
+      } else {
+        setIsFinished(true);
+      }
+    }, 3000); // Plays for 3 seconds
   };
 
   return (
-    <ImageBackground source={require('../../assets/images/jungle.jpg')} style={styles.container}>
-      
-      {/* Progress Bar at Top */}
-      <View style={styles.progressWrapper}>
-        <View style={styles.progressBarContainer}>
-          <Animated.View style={[styles.progressBarFill, { width: progressAnim.interpolate({
-            inputRange: [0, 100],
-            outputRange: ['0%', '100%']
-          }) }]} />
-        </View>
-        <Text style={styles.progressText}>Step {currentIndex + 1} of {words.length}</Text>
-      </View>
+    <View style={styles.container}>
+      <VideoView
+        style={StyleSheet.absoluteFill}
+        player={player}
+        allowsFullscreen={false}
+        nativeControls={false}
+        contentMode="cover"
+      />
 
-      <View style={styles.header}>
-        <Text style={styles.instruction}>Can you say...</Text>
-        <Text style={styles.targetWordText}>{targetWord}</Text>
-      </View>
+      <View style={styles.overlay}>
+        <View style={styles.header}>
+          <Text style={styles.instruction}>Say this quickly:</Text>
+          <Text style={styles.sentenceText}>{sentences[currentIndex]}</Text>
 
-      <Animated.View style={[
-        styles.turtleContainer, 
-        { transform: [{ translateY: verticalAnim }, { scale: scaleAnim }] }
-      ]}>
-        <Image source={require('../../assets/images/turtle.png')} style={styles.turtle} />
-      </Animated.View>
-
-      <View style={styles.feedbackContainer}>
-        <Text style={styles.feedbackText}>{feedback}</Text>
-      </View>
-
-      <View style={styles.bottomControls}>
-        <TouchableOpacity style={[styles.roundButton, styles.speakBtn]} onPress={startRecording}>
-          <Ionicons name="mic" size={40} color="white" />
-          <Text style={styles.btnLabel}>SPEAK</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.roundButton, styles.doneBtn]} onPress={handleSpeakResult}>
-          <Ionicons name="checkmark-done" size={40} color="white" />
-          <Text style={styles.btnLabel}>DONE</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Success Modal */}
-      <Modal visible={isFinished} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalEmoji}>🏆</Text>
-            <Text style={styles.modalTitle}>Level Complete!</Text>
-            <Text style={styles.modalSub}>The turtle made it home!</Text>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => setIsFinished(false)}>
-              <Text style={styles.modalBtnText}>Play Again</Text>
-            </TouchableOpacity>
+          <View style={styles.feedbackBox}>
+            {isLoading ? (
+              <ActivityIndicator color="#2E7D32" />
+            ) : (
+              <Text style={styles.feedbackText}>{feedback}</Text>
+            )}
           </View>
         </View>
+
+        <View style={styles.controls}>
+          <TouchableOpacity
+            style={[styles.btn, styles.speakBtn, recording && styles.recordingBtn]}
+            onPress={handleStartRecording}
+            disabled={isLoading}
+          >
+            <Ionicons name="mic" size={40} color="white" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.btn, styles.doneBtn]}
+            onPress={handleStopRecording}
+            disabled={isLoading}
+          >
+            <Ionicons name="checkmark" size={40} color="white" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <Modal visible={isFinished} transparent animationType="slide">
+        <View style={styles.modal}>
+          <Text style={styles.modalTitle}>Woods Explored! 🌲</Text>
+          <TouchableOpacity
+            style={styles.resetBtn}
+            onPress={() => {
+              setCurrentIndex(0);
+              setIsFinished(false);
+              setFeedback('🚀 Say the sentence fast and smooth!');
+            }}
+          >
+            <Text style={styles.resetText}>Play Again</Text>
+          </TouchableOpacity>
+        </View>
       </Modal>
-    </ImageBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'space-between' },
-  progressWrapper: { width: '80%', marginTop: 50, alignItems: 'center' },
-  progressBarContainer: { height: 15, width: '100%', backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 10, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: '#FFD700', borderRadius: 10 },
-  progressText: { color: 'white', marginTop: 5, fontWeight: 'bold' },
-  header: { marginTop: 20, alignItems: 'center' },
-  instruction: { color: 'white', fontSize: 18, fontWeight: '600' },
-  targetWordText: { fontSize: 55, fontWeight: 'bold', color: '#FFF' },
-  turtleContainer: { position: 'absolute', top: '40%' },
-  turtle: { width: 150, height: 150, resizeMode: 'contain' },
-  feedbackContainer: { backgroundColor: 'rgba(255,255,255,0.8)', padding: 15, borderRadius: 25, width: '85%', marginBottom: 20 },
-  feedbackText: { color: '#2E7D32', fontSize: 18, textAlign: 'center', fontWeight: 'bold' },
-  bottomControls: { flexDirection: 'row', justifyContent: 'space-evenly', width: '100%', marginBottom: 40 },
-  roundButton: { width: 90, height: 90, borderRadius: 45, justifyContent: 'center', alignItems: 'center', elevation: 8 },
+  container: { flex: 1, backgroundColor: 'black' },
+  overlay: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  header: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 20,
+    borderRadius: 20,
+  },
+  instruction: { color: '#ddd', fontSize: 18 },
+  sentenceText: {
+    color: 'white',
+    fontSize: 28,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginVertical: 10,
+  },
+  feedbackBox: {
+    marginTop: 10,
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  feedbackText: {
+    color: '#FFD700',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  controls: { flexDirection: 'row', justifyContent: 'space-evenly' },
+  btn: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+  },
   speakBtn: { backgroundColor: '#4CAF50' },
+  recordingBtn: { backgroundColor: '#E53935' }, // Red when recording
   doneBtn: { backgroundColor: '#FF9800' },
-  btnLabel: { color: 'white', fontWeight: 'bold', fontSize: 12, marginTop: 2 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { backgroundColor: 'white', padding: 40, borderRadius: 30, alignItems: 'center' },
-  modalEmoji: { fontSize: 60 },
-  modalTitle: { fontSize: 28, fontWeight: 'bold', marginVertical: 10 },
-  modalSub: { fontSize: 18, color: '#666', marginBottom: 20 },
-  modalBtn: { backgroundColor: '#4CAF50', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 20 },
-  modalBtnText: { color: 'white', fontWeight: 'bold', fontSize: 18 }
+  modal: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    color: 'white',
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  resetBtn: { backgroundColor: '#4CAF50', padding: 15, borderRadius: 15 },
+  resetText: { color: 'white', fontSize: 20, fontWeight: 'bold' },
 });
