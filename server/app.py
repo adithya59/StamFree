@@ -119,16 +119,32 @@ except Exception as e:
     print(f"❌ Critical Error Loading Model: {e}")
     raise e
 
+import soundfile as sf
+
 # --- HELPER FUNCTIONS ---
 
-
-def predict_file(filepath):
+def predict_file(audio_input):
     """
     Manual prediction using Wav2Vec.
+    Accepts a filepath (str) OR a pre-loaded numpy array.
     Returns: (label_string, confidence_float)
     """
-    # 1. Load Audio (Force 16kHz for Wav2Vec)
-    audio, sr = librosa.load(filepath, sr=16000)
+    # 1. Load Audio if input is a path
+    if isinstance(audio_input, str):
+        try:
+            # FAST PATH: Try soundfile first (for WAV)
+            audio, sr = sf.read(audio_input)
+            if sr != 16000:
+                # Resample if not 16k
+                audio = librosa.resample(y=audio, orig_sr=sr, target_sr=16000)
+            # Ensure mono
+            if len(audio.shape) > 1:
+                audio = np.mean(audio, axis=1)
+        except Exception:
+            # FALLBACK: Librosa (handles mp3/m4a/resampling)
+            audio, sr = librosa.load(audio_input, sr=16000)
+    else:
+        audio = audio_input  # Assume already at 16kHz
 
     # 2. Process Audio (Normalize & Extract Features)
     inputs = processor(
@@ -393,15 +409,9 @@ def analyze_audio():
 
 @app.route("/analyze/turtle", methods=["POST"])
 def analyze_turtle():
-
-    # 1. Handle File Upload
-
     if "file" not in request.files:
-
         return jsonify({"error": "No file"}), 400
-
     file = request.files["file"]
-
     filename = secure_filename(file.filename)
 
     filepath = os.path.join(os.getcwd(), filename)
@@ -517,6 +527,7 @@ def analyze_turtle():
 
 @app.route("/analyze/snake", methods=["POST"])
 def analyze_snake():
+    # ... (File validation code stays the same) ...
     # Supports both field names for compatibility
     file = request.files.get("file") or request.files.get("audioFile")
     if not file:
@@ -541,15 +552,19 @@ def analyze_snake():
         )
 
     if request.content_length and request.content_length > MAX_AUDIO_BYTES:
+
         return jsonify({"error": "File too large", "code": "FILE_TOO_LARGE"}), 400
 
     # Retrieve Game Data
+
     target_phoneme = request.form.get("targetPhoneme") or request.form.get(
         "prompt_phoneme"
     )
 
     filepath = os.path.join(os.getcwd(), filename)
+
     file.save(filepath)
+    # Retrieve Game Data
 
     try:
         t0 = time.time()
@@ -570,7 +585,9 @@ def analyze_snake():
         phoneme_match = None
         if target_phoneme:
             try:
+                # We analyze the whole file to capture the "L-aaaa" context which helps STT
                 full_text, words = get_google_transcript(filepath)
+
                 if words:
                     target = target_phoneme.strip().lower()
                     found = False
@@ -591,16 +608,24 @@ def analyze_snake():
                     phoneme_match = found
                 else:
                     # STT detected no words - trust voicing detection instead
-                    # If user was voicing, don't fail them for STT's inability to transcribe
                     if voicing["voiced_detected"]:
-                        phoneme_match = None  # Ignore phoneme match when STT fails but voicing detected
+                        # Benefit of Doubt: If STT missed it but we have strong voicing AND high AI fluency confidence, assume match.
+                        if score > 0.85:
+                            phoneme_match = True
+                        else:
+                            phoneme_match = None  # Unclear
                     else:
                         phoneme_match = False  # Silence/Hum usually means no word found
-            except Exception:
-                phoneme_match = None  # STT error, ignore
 
-        # 5. Apply Anti-Blow Rule (only override if we have strong evidence of no speech)
+            except Exception as e:
+                print(f"STT Error: {e}")
+                phoneme_match = None
+
+        # 5. Anti-Blow Rule (CRITICAL FIX)
+        blow_detected = False
+
         if target_phoneme:
+            # These sounds MUST have vibration/pitch. If they don't, it's just air.
             voiced_targets = {
                 "a",
                 "e",
@@ -621,68 +646,104 @@ def analyze_snake():
                 "z",
                 "j",
             }
-            is_voiced_target = target_phoneme.strip().lower() in voiced_targets
-            if is_voiced_target:
-                # Only fail if BOTH voicing AND STT failed (strong evidence of blow/noise)
-                # If either passed, give benefit of doubt
-                speech_likely = (
-                    voicing["voiced_detected"] or score > 0.6 or (phoneme_match is True)
-                )
-                if not speech_likely and phoneme_match is False:
-                    # Only override to False if we already had a phoneme mismatch from STT
-                    pass  # Keep phoneme_match as False
-                elif not speech_likely and phoneme_match is None:
-                    # STT didn't detect anything but voicing also failed - likely blow/noise
+            target_clean = target_phoneme.strip().lower()
+
+            if target_clean in voiced_targets:
+                # Evidence for speech:
+                # 1. Google STT matched the phoneme (Strongest evidence)
+                # 2. AI Wav2Vec score is very high (High confidence speech)
+                # 3. Voicing detected BUT only if STT didn't explicitly fail to find words
+
+                # If STT found nothing (None), we shouldn't trust simple voicing because blowing can have pitch.
+                # In that case, we rely on the AI model's confidence.
+                if phoneme_match is None:
+                    # STRICTER: For voiced targets, we require actual voicing signal.
+                    # We removed 'score > 0.85' fallback because it allowed unvoiced "S" to pass for "M".
+                    speech_likely = voicing['voiced_detected']
+                else:
+                    # STT found something (True/False) or voicing is strong
+                    speech_likely = voicing['voiced_detected'] or (phoneme_match is True)
+
+                if not speech_likely:
+                    print(
+                        f"[Analysis] Blow detected for voiced target '{target_clean}'"
+                    )
+                    blow_detected = True
+
+                    # FORCE FAIL:
+                    # Even if it was loud (amplitude), it wasn't speech.
+                    game_pass = False
+
+                    # Update metrics to reflect reality
                     phoneme_match = False
 
+        # 6. Override Logic (Trust Physics + Content)
+        if game_pass and (phoneme_match is True):
+            repetition_detected = False
+
+        # 7. Final Classification
+        clinical_pass = not repetition_detected
         is_hit = game_pass and clinical_pass
-        is_stutter = repetition_detected or not game_pass
+
+        is_stutter = repetition_detected  # In snake, not holding duration isn't a stutter, just a "fail"
+
         stutter_type = "Fluent"
         if repetition_detected:
             stutter_type = "Repetition"
         elif not game_pass:
-            stutter_type = "Block"
+            stutter_type = "Block"  # Or just "Short Duration"
 
-        stars_awarded = 1 if stutter_type in ["Repetition", "Block"] else 3
-        session_id = request.form.get("sessionId") or str(uuid.uuid4())
-        inference_ms = int((time.time() - t0) * 1000)
+        # ... logic flow ...
 
-        # Calculate overall confidence (0.0-1.0) for progression
-        # Factors: game pass (40%), clinical pass (30%), phoneme match (20%), voicing (10%)
+        # If we detected blowing, override everything to ensure failure
+        if blow_detected:
+            stutter_type = 'Noise' # Or 'Block'
+            stars_awarded = 1
+        elif phoneme_match is False:
+            # Explicit mismatch (STT heard something else clearly)
+            stutter_type = 'Mismatch'
+            stars_awarded = 1
+        else:
+            # Normal logic
+            if stutter_type == 'Fluent':
+                stars_awarded = 3
+            else:
+                stars_awarded = 1
+
+        # Calculate Confidence (0.0 - 1.0)
         confidence_score = 0.0
         if game_pass:
             confidence_score += 0.4
         if clinical_pass:
             confidence_score += 0.3
+
         if phoneme_match is True:
             confidence_score += 0.2
-        elif phoneme_match is None:  # STT error or no target - don't penalize
-            confidence_score += 0.15
+        elif phoneme_match is None:
+            confidence_score += 0.1  # Benefit of doubt
+
         if voicing["voiced_detected"]:
             confidence_score += 0.1
 
         response_payload = {
-            "sessionId": session_id,
+            "sessionId": request.form.get("sessionId") or str(uuid.uuid4()),
             "isStutter": is_stutter,
             "stutterType": stutter_type,
-            "confidence": confidence_score,  # Overall performance confidence for progression
-            # Back-compat for client VoiceIndicator: use model confidence as speech_prob proxy
-            "speech_prob": float(score),
+            "confidence": round(confidence_score, 2),
             "starsAwarded": stars_awarded,
-            "feedback": get_feedback(
-                "snake", is_hit, "Repetition" if repetition_detected else None
-            ),
-            "inferenceTimeMs": inference_ms,
-            "duration_sec": amp_data["duration_sec"],
-            "amplitude_sustained": amp_data["amplitude_sustained"],
             "game_pass": game_pass,
-            "repetition_detected": repetition_detected,
             "clinical_pass": clinical_pass,
             "phoneme_match": phoneme_match,
-            "voiced_detected": voicing["voiced_detected"],
-            "progressionConfidence": PROGRESSION_CONFIDENCE,
+            "voiced_detected": voicing['voiced_detected'],
+            "duration_sec": amp_data['duration_sec'],
+            "amplitude_sustained": amp_data['amplitude_sustained'],
+            "repetition_detected": repetition_detected,
+            "feedback": get_feedback('snake', is_hit, 'Repetition' if repetition_detected else None),
+            "speech_prob": float(score),
+            "inferenceTimeMs": int((time.time() - t0) * 1000),
         }
         return jsonify(response_payload)
+
     finally:
         if os.path.exists(filepath):
             try:
@@ -742,9 +803,35 @@ def analyze_balloon():
 
 @app.route("/analyze/onetap", methods=["POST"])
 def analyze_onetap():
-    if "file" not in request.files:
-        return jsonify({"error": "No file"}), 400
-    file = request.files["file"]
+    """
+    One-Tap Game Analysis: Word Count + Duration Validation
+    
+    Strategy:
+    - Use Google STT to count words (1 word = success, >1 = repetition)
+    - Validate duration (0.5x to 2.5x expected duration)
+    - Use Wav2Vec as fallback confidence check
+    
+    Expected form data:
+    - audio: Audio file (m4a/wav/mp3)
+    - target_word: Target word (e.g., "Spaghetti")
+    - syllables: JSON array of syllables (e.g., ["Spa", "ghet", "ti"])
+    - duration: Recording duration in seconds
+    """
+    if "audio" not in request.files:
+        return jsonify({"error": "No audio file"}), 400
+    
+    file = request.files["audio"]
+    target_word = request.form.get("target_word", "").strip()
+    syllables_json = request.form.get("syllables", "[]")
+    duration = float(request.form.get("duration", 0))
+    
+    # Parse syllables
+    import json
+    try:
+        syllables = json.loads(syllables_json)
+    except:
+        syllables = []
+    
     filename = secure_filename(file.filename)
     filepath = os.path.join(os.getcwd(), filename)
     file.save(filepath)
@@ -752,21 +839,80 @@ def analyze_onetap():
     try:
         t0 = time.time()
 
-        # Simple AI Check
-        label, score = predict_file(filepath)
-
-        is_stutter = "fluent" not in label.lower()
-        clinical_pass = not is_stutter
-
+        # 1. Google STT for word count
+        transcript = ""
+        word_count = 0
+        stt_confidence = 0.0
+        
+        try:
+            transcript, words_data = get_google_transcript(filepath)
+            transcript = transcript.strip()
+            
+            # Count words (split by spaces, filter empty)
+            word_list = [w for w in transcript.lower().split() if w]
+            word_count = len(word_list)
+            
+            # Average word confidence
+            if words_data:
+                stt_confidence = sum(w.get("confidence", 0) for w in words_data) / len(words_data)
+        except Exception as e:
+            print(f"STT Error: {e}")
+            # Fallback: Use Wav2Vec only
+            word_count = -1  # Unknown
+        
+        # 2. Duration validation
+        # Expected duration: ~0.15s per syllable + 0.5s baseline
+        syllable_count = len(syllables) if syllables else 2
+        expected_duration = (syllable_count * 0.15) + 0.5
+        
+        min_duration = expected_duration * 0.5
+        max_duration = expected_duration * 2.5
+        duration_valid = min_duration <= duration <= max_duration
+        
+        # 3. Wav2Vec check (fluency confidence)
+        label, wav2vec_score = predict_file(filepath)
+        is_fluent = "fluent" in label.lower()
+        
+        # 4. Final decision
+        # Repetition detected if:
+        # - Word count > 1 (clear repetition from STT)
+        # - OR duration too long (suggests multiple attempts)
+        # - OR Wav2Vec detects non-fluent speech
+        repetition_detected = False
+        repetition_probability = 0.0
+        
+        if word_count > 1:
+            # Clear repetition from STT
+            repetition_detected = True
+            repetition_probability = 0.9
+        elif word_count == 1 and duration_valid and is_fluent:
+            # Perfect: One word, good duration, fluent
+            repetition_detected = False
+            repetition_probability = 0.1
+        elif not duration_valid and duration > max_duration:
+            # Took too long (likely repeated)
+            repetition_detected = True
+            repetition_probability = 0.7
+        elif not is_fluent:
+            # Wav2Vec detected disfluency
+            repetition_detected = True
+            repetition_probability = wav2vec_score
+        else:
+            # Edge case: STT failed but Wav2Vec says fluent
+            repetition_detected = False
+            repetition_probability = 0.3
+        
         return jsonify(
             {
-                "stutter_detected": is_stutter,
-                "repetition_detected": is_stutter,  # Legacy field support
-                "clinical_pass": clinical_pass,
-                "confidence": score,
-                "feedback": get_feedback(
-                    "onetap", clinical_pass, "Stutter" if is_stutter else None
-                ),
+                "repetition_detected": repetition_detected,
+                "repetition_probability": repetition_probability,
+                "confidence": max(stt_confidence, wav2vec_score),
+                "word_count": word_count,
+                "transcript": transcript,
+                "duration_valid": duration_valid,
+                "expected_duration": expected_duration,
+                "wav2vec_label": label,
+                "wav2vec_confidence": wav2vec_score,
                 "elapsed_ms": int((time.time() - t0) * 1000),
             }
         )

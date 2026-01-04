@@ -40,9 +40,9 @@ export async function startRecording() {
       ios: {
         ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
         extension: '.wav',
-        outputFormat: Audio.IOSOutputFormat.LinearPCM,
+        outputFormat: Audio.IOSOutputFormat.LINEARPCM,
         audioQuality: Audio.IOSAudioQuality.HIGH,
-        sampleRate: 16000, // Match server model
+        sampleRate: 16000,
         numberOfChannels: 1,
         bitRate: 128000,
         linearPCMBitDepth: 16,

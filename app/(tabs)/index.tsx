@@ -1,8 +1,8 @@
+import { getUserStats, type UserStats } from '@/services/statsService';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useNavigation } from 'expo-router';
-import React, { useLayoutEffect } from 'react';
+import { router, useFocusEffect, useNavigation } from 'expo-router';
+import React, { useCallback, useLayoutEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
 
 interface ExerciseTile {
   id: string;
@@ -31,6 +31,22 @@ const exercises: ExerciseTile[] = [
     route: '/exercises/snake-game',
   },
   {
+    id: 'onetap',
+    title: 'One-Tap (Impulse Control)',
+    description: 'Say it once, say it right!',
+    icon: 'owl',
+    color: '#8E44AD',
+    route: '/exercises/onetap-game',
+  },
+  {
+    id: 'balloon',
+    title: 'Balloon (Easy Onset)',
+    description: 'Blow gently and watch it grow!',
+    icon: 'water-percent',
+    color: '#3498DB',
+    route: '/exercises/balloon-game',
+  },
+  {
     id: 'word-games',
     title: 'Word Games',
     description: 'Fun word puzzles and games',
@@ -50,12 +66,29 @@ const exercises: ExerciseTile[] = [
 
 export default function HomeScreen() {
   const navigation = useNavigation();
+  const [stats, setStats] = useState<UserStats | null>(null);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: false,
     });
   }, [navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+      const fetchStats = async () => {
+        try {
+          const data = await getUserStats();
+          if (isActive) setStats(data);
+        } catch (e) {
+          console.error('Failed to load stats', e);
+        }
+      };
+      fetchStats();
+      return () => { isActive = false; };
+    }, [])
+  );
 
   const handleExercisePress = (route: string) => {
     router.push(route as any);
@@ -114,7 +147,7 @@ export default function HomeScreen() {
             />
             <View style={styles.statContent}>
               <Text style={styles.statLabel}>Sessions This Week</Text>
-              <Text style={styles.statValue}>12</Text>
+              <Text style={styles.statValue}>{stats ? stats.sessionsThisWeek : '-'}</Text>
             </View>
           </View>
 
@@ -126,7 +159,7 @@ export default function HomeScreen() {
             />
             <View style={styles.statContent}>
               <Text style={styles.statLabel}>Current Streak</Text>
-              <Text style={styles.statValue}>5 days</Text>
+              <Text style={styles.statValue}>{stats ? stats.currentStreak : '-'} days</Text>
             </View>
           </View>
         </View>

@@ -35,7 +35,7 @@ export const SNAKE_CONFIG = {
    * Default: 2.0s
    * Related: Edge Cases, US4 Acceptance Scenario 2
    */
-  SLEEP_OVERLAY_DELAY: 2.0,
+  SLEEP_OVERLAY_DELAY: 1.0,
 
   /**
    * Maximum snake speed cap (as multiplier of base speed).
@@ -43,10 +43,10 @@ export const SNAKE_CONFIG = {
    * Base speed = pathLength / targetDuration
    * Effective speed = min(v_max, baseSpeed * f(amplitude))
    * Range: [1.0, Infinity]
-  * Default: 1.0 (cap at base speed)
+  * Default: 0.7 (70% of base speed for more controlled movement)
    * Related: FR-003, FR-019
    */
-  V_MAX: 1.0,
+  V_MAX: 0.7,
 
   /**
    * Target frame rate for game loop and visualizer updates.
@@ -67,7 +67,7 @@ export const SNAKE_CONFIG = {
    * Prevents "cheating" by rapid taps; user must sustain sound briefly.
    * Related: Risk Mitigation, Edge Cases
    */
-  MIN_CONTINUOUS_DURATION: 0.5,
+  MIN_CONTINUOUS_DURATION: 0.15,
 
   /**
    * Maximum allowed pause duration when allowPauses=true (seconds).
@@ -85,12 +85,12 @@ export const SNAKE_CONFIG = {
   /**
    * Noise floor used to gate background hum; amplitudes below this are treated as 0
    */
-  NOISE_FLOOR: 0.1,
+  NOISE_FLOOR: 0.7,
 
   /**
    * Smoothing factor for amplitude low-pass filter (0..1, higher = more weight on new sample)
    */
-  AMPLITUDE_SMOOTHING_ALPHA: 0.35,
+  AMPLITUDE_SMOOTHING_ALPHA: 0.65,
 
   /**
    * Hysteresis thresholds for voicing detection
@@ -98,12 +98,12 @@ export const SNAKE_CONFIG = {
    * - Movement stops when smoothed amplitude falls below VOICING_OFF_THRESHOLD
    * Helps avoid flicker from borderline inputs and enforces stronger starts with quicker stops.
    */
-  VOICING_ON_THRESHOLD: 0.35,
-  VOICING_OFF_THRESHOLD: 0.25,
+  VOICING_ON_THRESHOLD: 0.12,
+  VOICING_OFF_THRESHOLD: 0.08,
   /**
    * Minimum sustained time above VOICING_ON_THRESHOLD required to wake the snake (seconds)
    */
-  WAKE_LOCK_DURATION: 0.15,
+  WAKE_LOCK_DURATION: 0.1,
 
   /**
    * Raw off hold: if raw (unsmoothed) amplitude falls at/below NOISE_FLOOR

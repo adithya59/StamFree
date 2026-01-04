@@ -122,7 +122,7 @@ export const RetryModal: React.FC<RetryModalProps> = ({
                 size={18}
                 color="#1a73e8"
               />
-              <Text style={styles.tipText}>Watch the progress bar and keep going!</Text>
+              <Text style={styles.tipText}>Watch the snake and keep going!</Text>
             </View>
           </View>
 

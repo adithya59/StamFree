@@ -186,7 +186,7 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
 
       const recording = new Audio.Recording();
       
-      // Configure recording options for high quality (NFR-002)
+      // Configure recording options for minimal latency (16kHz to match AI model)
       const recordingOptions = {
         ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
         android: {
@@ -194,16 +194,16 @@ export const SnakeGameEngine: React.FC<SnakeGameEngineProps> = ({
           extension: '.m4a',
           outputFormat: Audio.AndroidOutputFormat.MPEG_4,
           audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 44100,
+          sampleRate: 16000, // Match server model (no resampling)
           numberOfChannels: 1,
-          bitRate: 128000,
+          bitRate: 64000,
         },
         ios: {
           ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
-          extension: '.m4a',
-          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+          extension: '.wav',
+          outputFormat: Audio.IOSOutputFormat.LINEARPCM,
           audioQuality: Audio.IOSAudioQuality.HIGH,
-          sampleRate: 44100,
+          sampleRate: 16000, // Match server model
           numberOfChannels: 1,
           bitRate: 128000,
           linearPCMBitDepth: 16,

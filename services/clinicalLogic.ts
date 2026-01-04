@@ -16,6 +16,9 @@ export type SnakeResponse = {
   clinical_pass: boolean;
   confidence: number;
   feedback: string;
+  starsAwarded?: number;
+  stutterType?: string;
+  isStutter?: boolean;
   phoneme_match?: boolean; // optional backend field indicating match to prompted phoneme
   voiced_detected?: boolean;
   noise_suspected?: boolean;
@@ -76,6 +79,8 @@ export function normalizeSnake(res: SnakeResponse): UnifiedResult {
       duration_sec: res.duration_sec,
       amplitude_sustained: res.amplitude_sustained,
       repetition_detected: res.repetition_detected,
+      ...(typeof res.starsAwarded === 'number' ? { starsAwarded: res.starsAwarded } : {}),
+      ...(typeof res.isStutter === 'boolean' ? { isStutter: res.isStutter } : {}),
       ...(typeof res.phoneme_match === 'boolean' ? { phoneme_match: res.phoneme_match } : {}),
       ...(typeof res.voiced_detected === 'boolean' ? { voiced_detected: res.voiced_detected } : {}),
       ...(typeof res.noise_suspected === 'boolean' ? { noise_suspected: res.noise_suspected } : {}),

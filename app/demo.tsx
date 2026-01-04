@@ -154,7 +154,7 @@ export default function Demo() {
           {/* 1. MAIN RESULT */}
           <Text style={styles.resultHeader}>Analysis Result</Text>
           <Text style={[styles.mainResult, result.is_stutter ? styles.textRed : styles.textGreen]}>
-            {result.is_stutter ? '⚠️ STUTTER DETECTED' : '✅ FLUENT SPEECH'}
+            {result.is_stutter ? `⚠️ ${result.type} detected` : '✅ Fluent speech'}
           </Text>
 
           {/* 2. TRANSCRIPT (New) */}
@@ -179,18 +179,10 @@ export default function Demo() {
               {/* SCORES */}
               <View style={styles.statsRow}>
                 <View style={styles.statCol}>
-                  <Text style={styles.statLabel}>Type</Text>
-                  <Text style={styles.statValue}>{result.type}</Text>
-                </View>
-                <View style={styles.statCol}>
                   <Text style={styles.statLabel}>Confidence</Text>
-                  <Text style={styles.statValue}>{((result.type_confidence || 0) * 100).toFixed(0)}%</Text>
+                  <Text style={styles.statValue}>{((result.stutter_score || 0) * 100).toFixed(0)}%</Text>
                 </View>
               </View>
-
-              <Text style={styles.debugText}>
-                Detection Score: {result.stutter_score}
-              </Text>
             </View>
           )}
         </View>
