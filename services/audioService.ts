@@ -1,95 +1,92 @@
-// services/audioService.ts
-import { Audio } from 'expo-av';
+import { Audio } from "expo-av";
 
-export async function startRecording(): Promise<Audio.Recording> {
+let recording: Audio.Recording | null = null;
+
+export async function startRecording() {
   try {
-    // Request microphone permissions if not already granted
+    // 1. Force cleanup of any existing recording
+    if (recording) {
+      console.warn("Found existing recording. Stopping it...");
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch (cleanupError) {
+        // Ignore cleanup errors (recording might be already unloaded)
+      }
+      recording = null;
+    }
+
     const { status } = await Audio.requestPermissionsAsync();
     if (status !== 'granted') {
-      throw new Error('Microphone permission not granted');
+      throw new Error("Microphone permission not granted");
     }
 
-    // Configure audio session for recording
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: true,
-      playsInSilentModeIOS: true, // Ensures recording works even when the device is on silent
-      shouldDuckAndroid: true,
-      interruptionModeIOS: 1, // Stay active
-      interruptionModeAndroid: 1, // Stay active
+      playsInSilentModeIOS: true,
     });
 
-    // Create and prepare the recording
-    const newRecording = new Audio.Recording();
-    await newRecording.prepareToRecordAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    // 2. Configure recording options for minimal latency (16kHz to match AI model)
+    const recordingOptions = {
+      ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      android: {
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
+        extension: '.m4a',
+        outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+        audioEncoder: Audio.AndroidAudioEncoder.AAC,
+        sampleRate: 16000, // Match server model (no resampling)
+        numberOfChannels: 1,
+        bitRate: 64000,
+      },
+      ios: {
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+        extension: '.wav',
+        outputFormat: Audio.IOSOutputFormat.LinearPCM,
+        audioQuality: Audio.IOSAudioQuality.HIGH,
+        sampleRate: 16000, // Match server model
+        numberOfChannels: 1,
+        bitRate: 128000,
+        linearPCMBitDepth: 16,
+        linearPCMIsBigEndian: false,
+        linearPCMIsFloat: false,
+      },
+      web: {
+        mimeType: 'audio/webm',
+        bitsPerSecond: 128000,
+      },
+    };
+
+    const { recording: newRecording } = await Audio.Recording.createAsync(
+      recordingOptions
     );
-
-    // Start recording
-    await newRecording.startAsync();
-
-    console.log('Recording started!');
-    return newRecording;
+    
+    recording = newRecording;
+    console.log("Recording started");
   } catch (error) {
-    console.error('Failed to start recording', error);
-    throw error; // Re-throw the error to be handled by the caller
+    console.error("Failed to start recording:", error);
+    recording = null; // Reset on failure
   }
 }
 
-export async function stopRecording(
-  recording: Audio.Recording
-): Promise<string | null> {
+export async function stopRecording(): Promise<string | null> {
   if (!recording) {
-    console.warn('No recording object provided to stopRecording.');
+    console.log("No active recording to stop.");
     return null;
   }
 
   try {
-    await recording.stopAndUnloadAsync();
+    const status = await recording.getStatusAsync();
+    // Only stop if it's recording or prepared
+    if (status.isRecording || status.canRecord) {
+        await recording.stopAndUnloadAsync();
+    }
     const uri = recording.getURI();
-    console.log('Recording stopped and stored at', uri);
+    console.log("Recording stopped, URI:", uri);
+    
+    recording = null; // Clear the object for the next session
     return uri;
   } catch (error) {
-    console.error('Failed to stop recording', error);
-    // Even if it fails to stop, try to unload to free up resources
-    await recording.unloadAsync().catch(() => {});
+    console.error("Failed to stop recording:", error);
+    recording = null; // Ensure cleanup even on error
     return null;
   }
 }
-// ... keep your existing startRecording and stopRecording code ...
-
-export async function uploadTurtleAudio(uri: string) {
-  const formData = new FormData();
-  
-  // Create the file object for the request
-  const fileToUpload = {
-    uri: uri,
-    name: 'recording.m4a',
-    type: 'audio/m4a',
-  };
-
-  // @ts-ignore
-  formData.append('file', fileToUpload);
-
-  try {
-    const response = await fetch('http://172.20.10.5:5000/analyze/turtle', {
-      method: 'POST',
-      body: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Server error: ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error("Upload Error:", error);
-    return null;
-  }
-}
-
-// services/audioService.ts
-
-
