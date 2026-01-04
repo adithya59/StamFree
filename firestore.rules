@@ -2,7 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Shared content bank is read-only to clients
+    // 1. Shared Content Pools (Read-Only for Authenticated Users)
+    
+    // Original shared bank (Legacy/Shared)
     match /content_bank/{docId} {
       allow read: if request.auth != null;
       allow write: if false;
@@ -31,6 +33,36 @@ service cloud.firestore {
 
       // Snake attempt logs (per game session)
       match /snake_attempts/{attemptId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    // Snake Game Phonemes
+    match /snake_phoneme_pool/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false; 
+    }
+
+    // Turtle Game Sentences
+    match /turtle_content_pool/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // 2. User Data (Read/Write for Owner)
+    
+    // Matches the user doc AND any subcollection (stats, snake_progress, turtle_progress, etc.)
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // 3. Legacy/Root Collections (Cleanup later)
+    match /user_progress/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      match /{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }

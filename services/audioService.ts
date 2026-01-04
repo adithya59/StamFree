@@ -4,10 +4,15 @@ let recording: Audio.Recording | null = null;
 
 export async function startRecording() {
   try {
-    // 1. Check if a recording object already exists to prevent "Only one Recording" error
+    // 1. Force cleanup of any existing recording
     if (recording) {
-      console.warn("A recording is already in progress. Stopping it first...");
-      await stopRecording();
+      console.warn("Found existing recording. Stopping it...");
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch (cleanupError) {
+        // Ignore cleanup errors (recording might be already unloaded)
+      }
+      recording = null;
     }
 
     const { status } = await Audio.requestPermissionsAsync();
@@ -20,7 +25,7 @@ export async function startRecording() {
       playsInSilentModeIOS: true,
     });
 
-    // 2. Create and prepare the recording
+    // 2. Configure recording options for minimal latency (16kHz to match AI model)
     const recordingOptions = {
       ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
       android: {
@@ -28,7 +33,7 @@ export async function startRecording() {
         extension: '.m4a',
         outputFormat: Audio.AndroidOutputFormat.MPEG_4,
         audioEncoder: Audio.AndroidAudioEncoder.AAC,
-        sampleRate: 16000,
+        sampleRate: 16000, // Match server model (no resampling)
         numberOfChannels: 1,
         bitRate: 64000,
       },
@@ -69,14 +74,11 @@ export async function stopRecording(): Promise<string | null> {
   }
 
   try {
-    // 3. Verify the recording is actually prepared/active before unloading
     const status = await recording.getStatusAsync();
-    if (!status.canRecord) {
-      console.warn("Recording is not in a state that can be stopped.");
-      return null;
+    // Only stop if it's recording or prepared
+    if (status.isRecording || status.canRecord) {
+        await recording.stopAndUnloadAsync();
     }
-
-    await recording.stopAndUnloadAsync();
     const uri = recording.getURI();
     console.log("Recording stopped, URI:", uri);
     

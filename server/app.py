@@ -413,27 +413,83 @@ def analyze_turtle():
         return jsonify({"error": "No file"}), 400
     file = request.files["file"]
     filename = secure_filename(file.filename)
+
     filepath = os.path.join(os.getcwd(), filename)
+
     file.save(filepath)
 
     try:
+
         t0 = time.time()
 
-        # 1. AI Check (Wav2Vec)
+        # 2. Run Wav2Vec AI Prediction (Correctness)
+
+        # predict_file loads audio and compares it against your dataset model
+
         label, score = predict_file(filepath)
 
-        is_stutter = "fluent" not in label.lower()
-        block_detected = "block" in label.lower()
+        # Buffer: Only trigger 'block' if the AI is very confident
 
-        # 2. WPM Check
+        is_stutter = "fluent" not in label.lower()
+
+        block_detected = "block" in label.lower() and score > 0.75
+
+        # 3. Run Google STT & WPM Check (Speed)
         text, words = get_google_transcript(filepath)
         wpm = calculate_wpm(words) if words else 0
 
-        game_pass = wpm < 120 and wpm > 0
+        # Content Matching Logic
+        target_text = request.form.get("targetText", "")
+        content_pass = True
+
+        if target_text and text:
+            # Simple set overlap check
+            target_words = set(target_text.lower().split())
+            spoken_words = set(text.lower().split())
+            # Calculate intersection
+            common = target_words.intersection(spoken_words)
+            # Require at least 50% of target words to be present
+            if len(common) < len(target_words) * 0.5:
+                content_pass = False
+                print(f"❌ Content Mismatch: Expected '{target_text}', Got '{text}'")
+
+        # 4. TERMINAL LOGGING (Debug view for you to see possibilities)
+        print("\n" + "🐢" * 15)
+        print(f"DEBUG ANALYSIS: {filename}")
+        print(f"WORD SAID: '{text}'")
+        print(f"SPEED: {wpm} WPM (Target: 80-120)")
+        print(f"AI LABEL: {label}")
+        print(f"CONFIDENCE: {score:.4f}")
+        print(f"BLOCK DETECTED: {block_detected}")
+        print("🐢" * 15 + "\n")
+
+        # 5. Define Passing Conditions
+        # Therapeutic Target: 80 - 120 WPM (Turtle Mode)
+        game_pass = 80 <= wpm <= 120
         clinical_pass = not block_detected
-        is_hit = game_pass and clinical_pass
+
+        # The turtle moves if BOTH conditions are met AND content matches
+        is_hit = game_pass and clinical_pass and content_pass
+
+        # Custom Feedback for Turtle
+        if not content_pass:
+            feedback = "Oops! That didn't sound quite right. Read the sentence on the screen!"
+        elif wpm > 120:
+            feedback = (
+                "Whoa! Too fast for a turtle. Try to slow down and say it again."
+            )
+        elif wpm < 80 and wpm > 0:
+            feedback = "A bit too sleepy! Try to speed up just a little bit."
+        elif wpm == 0:
+            feedback = "I couldn't hear you clearly. Try again?"
+        elif block_detected:
+            feedback = "Try to keep your speech smooth and flowing!"
+        else:
+            feedback = "Perfect turtle pace! Watch me go!"
 
         elapsed_ms = int((time.time() - t0) * 1000)
+
+        # 6. Return Response to React Native App
         return jsonify(
             {
                 "wpm": wpm,
@@ -442,17 +498,30 @@ def analyze_turtle():
                 "block_detected": block_detected,
                 "clinical_pass": clinical_pass,
                 "confidence": score,
-                "feedback": get_feedback(
-                    "turtle", is_hit, "Block" if block_detected else None
-                ),
+                "transcript": text,
+                "feedback": feedback,
                 "elapsed_ms": elapsed_ms,
             }
         )
+
+    except Exception as e:
+
+        print(f"❌ Server Error in analyze_turtle: {e}")
+
+        return jsonify({"error": str(e)}), 500
+
     finally:
+
+        # 7. Cleanup: Delete audio file to save space
+
         if os.path.exists(filepath):
+
             try:
+
                 os.remove(filepath)
+
             except:
+
                 pass
 
 
@@ -460,11 +529,8 @@ def analyze_turtle():
 def analyze_snake():
     # ... (File validation code stays the same) ...
     # Supports both field names for compatibility
-
     file = request.files.get("file") or request.files.get("audioFile")
-
     if not file:
-
         return (
             jsonify(
                 {"error": "Missing required field: audioFile", "code": "MISSING_FIELD"}
@@ -473,11 +539,8 @@ def analyze_snake():
         )
 
     filename = secure_filename(file.filename)
-
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-
     if ext not in ALLOWED_EXTENSIONS:
-
         return (
             jsonify(
                 {
@@ -506,15 +569,16 @@ def analyze_snake():
     try:
         t0 = time.time()
 
-        # 1. AI Check (Wav2Vec) on FULL FILE
+        # 1. AI Check (Wav2Vec)
         label, score = predict_file(filepath)
         repetition_detected = "repetition" in label.lower()
 
-        # 2. Amplitude Check on FULL FILE (Did they hold it?)
+        # 2. Amplitude Check
         amp_data = analyze_amplitude(filepath)
         game_pass = amp_data["amplitude_sustained"]
+        clinical_pass = not repetition_detected
 
-        # 3. Voicing / Anti-Blow Logic on FULL FILE
+        # 3. Voicing / Anti-Blow Logic
         voicing = analyze_voicing_noise(filepath)
 
         # 4. Phoneme Validation (Google STT)

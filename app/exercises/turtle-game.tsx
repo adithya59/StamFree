@@ -1,158 +1,318 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Speech from 'expo-speech'; // Ensure expo-speech is installed
+import * as Speech from 'expo-speech';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Image, ImageBackground, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { startRecording, stopRecording } from '../../services/audioService';
+import { analyzeTurtleAudio } from '@/services/turtleAnalysis';
+import { TurtleVideo } from '../../components/turtle/TurtleVideo';
+import { getNextTurtleSession, recordTurtleResult, type TurtleContent } from '@/services/turtlePlaylist';
+import { auth } from '@/config/firebaseConfig';
 
 export default function TalkingTurtle() {
-  const words = ['Apple', 'Banana', 'Tiger', 'Sun']; // The word list for the level
+  const [sessionContent, setSessionContent] = useState<TurtleContent[][]>([]);
+  const [currentLap, setCurrentLap] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  
   const [feedback, setFeedback] = useState('🐢 Help the turtle reach the end of the road!');
   const [isFinished, setIsFinished] = useState(false);
-  
-  const targetWord = words[currentIndex];
-  
-  // Turtle positioning
-  const verticalAnim = useRef(new Animated.Value(-200)).current; 
-  const scaleAnim = useRef(new Animated.Value(0.6)).current;
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [showLapModal, setShowLapModal] = useState(false);
   
   // Progress Bar Width
   const progressAnim = useRef(new Animated.Value(0)).current;
 
+  // Load session content on mount
   useEffect(() => {
-    // Update progress bar whenever the index changes
-    Animated.timing(progressAnim, {
-      toValue: (currentIndex / words.length) * 100,
-      duration: 500,
-      useNativeDriver: false,
-    }).start();
-  }, [currentIndex]);
-
-  const handleSpeakResult = async () => {
-    const audioUri = await stopRecording();
-    if (!audioUri) return;
-
-    try {
-      // TODO: Implement transcription using backend API
-      // For now, auto-succeed for testing
-      const isCorrect = true;
-
-      if (isCorrect) {
-        processSuccess();
-      } else {
-        setFeedback('Almost! Try saying it again slowly 🐢');
-        Speech.speak('Almost! Try saying it again slowly.'); // Turtle voice
+    const loadSession = async () => {
+      if (auth.currentUser) {
+        const content = await getNextTurtleSession(auth.currentUser.uid);
+        if (content.length > 0) {
+          setSessionContent(content);
+        } else {
+          // Fallback with correct literal types
+          const dummyDeck: TurtleContent[] = [
+            { id: 'default', text: 'Hello Turtle', wordCount: 2, tier: 1 }
+          ];
+          setSessionContent([dummyDeck, dummyDeck, dummyDeck]);
+        }
       }
-    } catch (error) {
-      setFeedback("The jungle is noisy! Try again? 🐢");
+    };
+    loadSession();
+  }, []);
+
+  const currentDeck = sessionContent[currentLap] || [];
+  const targetItem = currentDeck[currentIndex];
+  const totalLaps = sessionContent.length;
+  const totalStepsPerLap = currentDeck.length || 4;
+  const totalSteps = totalLaps * totalStepsPerLap;
+  const currentGlobalStep = (currentLap * totalStepsPerLap) + currentIndex;
+
+  useEffect(() => {
+    if (totalSteps > 0) {
+      Animated.timing(progressAnim, {
+        toValue: (currentGlobalStep / totalSteps) * 100,
+        duration: 500,
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [currentGlobalStep, totalSteps]);
+
+  // Initial Loading State
+  if (sessionContent.length === 0) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#81C784' }]}>
+        <ActivityIndicator size="large" color="white" />
+        <Text style={{ marginTop: 20, color: 'white', fontSize: 18, fontWeight: 'bold' }}>Preparing your adventure...</Text>
+      </View>
+    );
+  }
+
+  const handleToggleRecording = async () => {
+    if (!isRecording) {
+      try {
+        setFeedback('🐢 I am listening...');
+        await startRecording();
+        setIsRecording(true);
+      } catch (error) {
+        setFeedback("Couldn't start the mic! 🐢");
+      }
+    } else {
+      setIsLoading(true);
+      setIsRecording(false);
+      const audioUri = await stopRecording();
+      if (!audioUri) {
+          setIsLoading(false);
+          return;
+      }
+
+      try {
+        setFeedback('🐢 Thinking...');
+        const result = await analyzeTurtleAudio(audioUri, targetItem?.text);
+
+        if (result) {
+          const isCorrect = result.game_pass && result.clinical_pass;
+          setFeedback(result.feedback);
+          Speech.speak(result.feedback);
+
+          if (auth.currentUser && targetItem) {
+             recordTurtleResult(auth.currentUser.uid, targetItem.id, isCorrect);
+          }
+
+          if (isCorrect) {
+              processSuccess();
+          }
+        } else {
+          setFeedback("I couldn't hear you clearly. Try again? 🐢");
+        }
+      } catch (error) {
+        setFeedback("The jungle is noisy! Try again? 🐢");
+      } finally {
+          setIsLoading(false);
+      }
     }
   };
 
   const processSuccess = () => {
-    setFeedback('WOW! You said it! 🐢 JUMP!');
-    Speech.speak('Perfect! Watch me go!');
-
-    // Move turtle forward
-    const currentVertical = (verticalAnim as any)._value || -200 + (currentIndex * 120);
-    const currentScale = (scaleAnim as any)._value || 0.6 + (currentIndex * 0.15);
+    const nextIndex = currentIndex + 1;
     
-    Animated.parallel([
-      Animated.timing(verticalAnim, {
-        toValue: currentVertical + 120,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: currentScale + 0.15,
-        duration: 1000,
-        useNativeDriver: true,
-      })
-    ]).start(() => {
-      if (currentIndex + 1 < words.length) {
-        setCurrentIndex(currentIndex + 1);
+    if (nextIndex < currentDeck.length) {
+      // Normal step within lap
+      setTimeout(() => setCurrentIndex(nextIndex), 500);
+    } else {
+      // Lap Finished!
+      // FOR DEMO: Immediately finish session after Lap 1
+      setIsFinished(true); 
+      
+      /* 
+      // LEGACY MULTI-LAP LOGIC (Restore later)
+      if (currentLap + 1 < totalLaps) {
+        setShowLapModal(true); 
       } else {
-        setIsFinished(true); // Game Complete!
+        setIsFinished(true);
       }
-    });
+      */
+    }
+  };
+
+  const nextLap = () => {
+    setShowLapModal(false);
+    setCurrentLap(prev => prev + 1);
+    setCurrentIndex(0);
+    setFeedback("Let's keep going! New adventure! 🌟");
   };
 
   return (
-    <ImageBackground source={require('../../assets/images/jungle.jpg')} style={styles.container}>
+    <View style={styles.container}>
+      {/* Segmented Video Controller */}
+      <TurtleVideo 
+        currentStep={currentIndex} 
+        totalSteps={totalStepsPerLap} 
+      />
       
-      {/* Progress Bar at Top */}
-      <View style={styles.progressWrapper}>
-        <View style={styles.progressBarContainer}>
-          <Animated.View style={[styles.progressBarFill, { width: progressAnim.interpolate({
-            inputRange: [0, 100],
-            outputRange: ['0%', '100%']
-          }) }]} />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <View style={styles.topRow}>
+          <TouchableOpacity 
+            style={styles.iconButton} 
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={28} color="white" />
+          </TouchableOpacity>
+          
+          <View style={styles.progressWrapper}>
+            <View style={styles.progressBarContainer}>
+              <Animated.View style={[styles.progressBarFill, { width: progressAnim.interpolate({
+                inputRange: [0, 100],
+                outputRange: ['0%', '100%']
+              }) }]} />
+            </View>
+            <Text style={styles.progressText}>Lap {currentLap + 1} of {totalLaps}</Text>
+          </View>
+          <View style={{ width: 44 }} />
         </View>
-        <Text style={styles.progressText}>Step {currentIndex + 1} of {words.length}</Text>
-      </View>
 
-      <View style={styles.header}>
-        <Text style={styles.instruction}>Can you say...</Text>
-        <Text style={styles.targetWordText}>{targetWord}</Text>
-      </View>
+        <View style={styles.promptCard}>
+          <Text style={styles.instruction}>Can you say...</Text>
+          <Text style={[
+            styles.targetWordText, 
+            (targetItem?.text.length || 0) > 20 && { fontSize: 28 }
+          ]}>
+            {targetItem?.text || 'Loading...'}
+          </Text>
+        </View>
 
-      <Animated.View style={[
-        styles.turtleContainer, 
-        { transform: [{ translateY: verticalAnim }, { scale: scaleAnim }] }
-      ]}>
-        <Image source={require('../../assets/images/turtle.png')} style={styles.turtle} />
-      </Animated.View>
+        <View style={{ flex: 1 }} /> 
 
-      <View style={styles.feedbackContainer}>
-        <Text style={styles.feedbackText}>{feedback}</Text>
-      </View>
+        <View style={styles.feedbackContainer}>
+          <Text style={styles.feedbackText}>{feedback}</Text>
+        </View>
 
-      <View style={styles.bottomControls}>
-        <TouchableOpacity style={[styles.roundButton, styles.speakBtn]} onPress={startRecording}>
-          <Ionicons name="mic" size={40} color="white" />
-          <Text style={styles.btnLabel}>SPEAK</Text>
-        </TouchableOpacity>
+        <View style={styles.bottomControls}>
+          <TouchableOpacity 
+            style={[
+              styles.mainActionButton, 
+              isRecording ? styles.recordingBtn : styles.idleBtn,
+              isLoading && styles.loadingBtn
+            ]} 
+            onPress={handleToggleRecording} 
+            disabled={isLoading || !targetItem}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="white" size="large" />
+            ) : (
+              <Ionicons 
+                name={isRecording ? "checkmark-circle" : "mic"} 
+                size={50} 
+                color="white" 
+              />
+            )}
+            <Text style={styles.mainBtnLabel}>
+              {isLoading ? 'ANALYZING' : isRecording ? 'DONE' : 'SPEAK'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
 
-        <TouchableOpacity style={[styles.roundButton, styles.doneBtn]} onPress={handleSpeakResult}>
-          <Ionicons name="checkmark-done" size={40} color="white" />
-          <Text style={styles.btnLabel}>DONE</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Success Modal */}
-      <Modal visible={isFinished} transparent animationType="fade">
+      {/* Lap Complete Modal */}
+      <Modal visible={showLapModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalEmoji}>🏆</Text>
-            <Text style={styles.modalTitle}>Level Complete!</Text>
-            <Text style={styles.modalSub}>The turtle made it home!</Text>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => setIsFinished(false)}>
-              <Text style={styles.modalBtnText}>Play Again</Text>
+            <Text style={styles.modalEmoji}>🚩</Text>
+            <Text style={styles.modalTitle}>Lap Complete!</Text>
+            <Text style={styles.modalSub}>The turtle finished this path!</Text>
+            <TouchableOpacity style={styles.modalBtn} onPress={nextLap}>
+              <Text style={styles.modalBtnText}>Next Adventure</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </ImageBackground>
+
+      {/* Session Complete Modal */}
+      <Modal visible={isFinished} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalEmoji}>🏆</Text>
+            <Text style={styles.modalTitle}>Champion!</Text>
+            <Text style={styles.modalSub}>You finished all 3 adventures!</Text>
+            <TouchableOpacity style={styles.modalBtn} onPress={() => { setIsFinished(false); router.back(); }}>
+              <Text style={styles.modalBtnText}>Finish</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'space-between' },
-  progressWrapper: { width: '80%', marginTop: 50, alignItems: 'center' },
-  progressBarContainer: { height: 15, width: '100%', backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 10, overflow: 'hidden' },
+  container: { flex: 1 },
+  safeArea: { flex: 1, alignItems: 'center', justifyContent: 'space-between' },
+  topRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    width: '100%', 
+    paddingHorizontal: 16,
+    paddingTop: 10
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressWrapper: { flex: 1, marginHorizontal: 20, alignItems: 'center' },
+  progressBarContainer: { height: 12, width: '100%', backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 10, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: '#FFD700', borderRadius: 10 },
-  progressText: { color: 'white', marginTop: 5, fontWeight: 'bold' },
-  header: { marginTop: 20, alignItems: 'center' },
-  instruction: { color: 'white', fontSize: 18, fontWeight: '600' },
-  targetWordText: { fontSize: 55, fontWeight: 'bold', color: '#FFF' },
-  turtleContainer: { position: 'absolute', top: '40%' },
+  progressText: { color: 'white', marginTop: 4, fontWeight: 'bold', fontSize: 12 },
+  promptCard: { 
+    backgroundColor: 'rgba(255,255,255,0.9)', 
+    padding: 20, 
+    borderRadius: 30, 
+    width: '90%', 
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    marginTop: 10,
+  },
+  instruction: { color: '#666', fontSize: 16, fontWeight: '600' },
+  targetWordText: { fontSize: 48, fontWeight: 'bold', color: '#1a73e8', textAlign: 'center', marginTop: 4 },
+  turtleContainer: { position: 'absolute', top: '50%', marginTop: -75 },
   turtle: { width: 150, height: 150, resizeMode: 'contain' },
-  feedbackContainer: { backgroundColor: 'rgba(255,255,255,0.8)', padding: 15, borderRadius: 25, width: '85%', marginBottom: 20 },
+  feedbackContainer: { backgroundColor: 'rgba(255,255,255,0.85)', padding: 15, borderRadius: 25, width: '85%', marginBottom: 20 },
   feedbackText: { color: '#2E7D32', fontSize: 18, textAlign: 'center', fontWeight: 'bold' },
-  bottomControls: { flexDirection: 'row', justifyContent: 'space-evenly', width: '100%', marginBottom: 40 },
-  roundButton: { width: 90, height: 90, borderRadius: 45, justifyContent: 'center', alignItems: 'center', elevation: 8 },
-  speakBtn: { backgroundColor: '#4CAF50' },
-  doneBtn: { backgroundColor: '#FF9800' },
-  btnLabel: { color: 'white', fontWeight: 'bold', fontSize: 12, marginTop: 2 },
+  bottomControls: { alignItems: 'center', width: '100%', marginBottom: 20 },
+  mainActionButton: { 
+    width: 110, 
+    height: 110, 
+    borderRadius: 55, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+  idleBtn: { backgroundColor: '#4CAF50' },
+  recordingBtn: { backgroundColor: '#FF9800' },
+  loadingBtn: { backgroundColor: '#1a73e8' },
+  mainBtnLabel: { color: 'white', fontWeight: '900', fontSize: 12, marginTop: 2 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: 'white', padding: 40, borderRadius: 30, alignItems: 'center' },
   modalEmoji: { fontSize: 60 },
