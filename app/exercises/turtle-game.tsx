@@ -1,5 +1,9 @@
+import { auth } from '@/config/firebaseConfig';
+import { speak } from '@/services/tts';
+import { analyzeTurtleAudio } from '@/services/turtleAnalysis';
+import { getNextTurtleSession, recordTurtleResult, type TurtleContent } from '@/services/turtlePlaylist';
 import { Ionicons } from '@expo/vector-icons';
-import * as Speech from 'expo-speech';
+import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,12 +15,8 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { startRecording, stopRecording } from '../../services/audioService';
-import { analyzeTurtleAudio } from '@/services/turtleAnalysis';
 import { TurtleVideo } from '../../components/turtle/TurtleVideo';
-import { getNextTurtleSession, recordTurtleResult, type TurtleContent } from '@/services/turtlePlaylist';
-import { auth } from '@/config/firebaseConfig';
+import { startRecording, stopRecording } from '../../services/audioService';
 
 export default function TalkingTurtle() {
   const [sessionContent, setSessionContent] = useState<TurtleContent[][]>([]);
@@ -68,6 +68,17 @@ export default function TalkingTurtle() {
     }
   }, [currentGlobalStep, totalSteps]);
 
+  // Speak the current target aloud whenever it changes
+  useEffect(() => {
+    if (targetItem?.text) {
+      try {
+        speak(targetItem.text, { type: 'prompt' });
+      } catch (e) {
+        // ignore TTS errors
+      }
+    }
+  }, [targetItem?.text]);
+
   // Initial Loading State
   if (sessionContent.length === 0) {
     return (
@@ -103,7 +114,7 @@ export default function TalkingTurtle() {
         if (result) {
           const isCorrect = result.game_pass && result.clinical_pass;
           setFeedback(result.feedback);
-          Speech.speak(result.feedback);
+          speak(result.feedback, { type: 'feedback' });
 
           if (auth.currentUser && targetItem) {
              recordTurtleResult(auth.currentUser.uid, targetItem.id, isCorrect);
@@ -189,6 +200,17 @@ export default function TalkingTurtle() {
           ]}>
             {targetItem?.text || 'Loading...'}
           </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+            <TouchableOpacity
+              onPress={() => {
+                if (targetItem?.text) {
+                  try { speak(targetItem.text, { type: 'prompt' }); } catch (e) {}
+                }
+              }}
+            >
+              <Ionicons name="volume-high" size={28} color="#1a73e8" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={{ flex: 1 }} /> 
@@ -294,8 +316,8 @@ const styles = StyleSheet.create({
   targetWordText: { fontSize: 48, fontWeight: 'bold', color: '#1a73e8', textAlign: 'center', marginTop: 4 },
   turtleContainer: { position: 'absolute', top: '50%', marginTop: -75 },
   turtle: { width: 150, height: 150, resizeMode: 'contain' },
-  feedbackContainer: { backgroundColor: 'rgba(255,255,255,0.85)', padding: 15, borderRadius: 25, width: '85%', marginBottom: 20 },
-  feedbackText: { color: '#2E7D32', fontSize: 18, textAlign: 'center', fontWeight: 'bold' },
+  feedbackContainer: { backgroundColor: 'rgba(255,255,255,0.98)', padding: 14, borderRadius: 20, width: '90%', alignSelf: 'center', marginTop: 12, marginBottom: 12 },
+  feedbackText: { color: '#2E7D32', fontSize: 17, textAlign: 'center', fontWeight: '700' },
   bottomControls: { alignItems: 'center', width: '100%', marginBottom: 20 },
   mainActionButton: { 
     width: 110, 
