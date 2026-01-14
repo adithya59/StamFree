@@ -1,9 +1,17 @@
 import { Audio } from "expo-av";
 
 let recording: Audio.Recording | null = null;
+let isPreparing = false; // Prevent concurrent prepare/create
 
 export async function startRecording() {
   try {
+    // Block concurrent calls while preparing/creating
+    if (isPreparing) {
+      console.warn("Recording is already preparing. Ignoring duplicate start.");
+      return;
+    }
+    isPreparing = true;
+
     // 1. Force cleanup of any existing recording
     if (recording) {
       console.warn("Found existing recording. Stopping it...");
@@ -64,6 +72,8 @@ export async function startRecording() {
   } catch (error) {
     console.error("Failed to start recording:", error);
     recording = null; // Reset on failure
+  } finally {
+    isPreparing = false;
   }
 }
 

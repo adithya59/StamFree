@@ -155,7 +155,7 @@ export default function SnakeGameScreen() {
         setIsSpeaking(true);
         const instruction = getInstructionText(sessionConfig.phoneme, sessionConfig.tier, sessionConfig.category);
         const voicePrompt = getPhonemeVoicePrompt(sessionConfig.example);
-        const fullText = `Deep breath... ${voicePrompt}. ${instruction}`;
+        const fullText = `Take a Deep breath in.... ${instruction}`;
         
         Speech.speak(fullText, {
           onDone: () => setIsSpeaking(false),

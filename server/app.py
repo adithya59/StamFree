@@ -32,6 +32,10 @@ except LookupError:
     nltk.download('averaged_perceptron_tagger_eng')
     nltk.download('cmudict')
 
+# --- TORCH THREADING (reduce CPU context switching on small instances) ---
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+ 
 # --- CONFIGURATION ---
 PORT = int(os.environ.get('PORT', 5000))
 CREDENTIALS_PATH = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', 'credentials.json')
@@ -63,6 +67,7 @@ ALLOWED_EXTENSIONS = {'wav', 'm4a', 'mp3', 'webm'}
 SPEECH_PROB_MIN = float(os.environ.get("SPEECH_PROB_MIN", "0.35"))
 PITCHED_RATIO_MIN = float(os.environ.get("PITCHED_RATIO_MIN", "0.15"))
 PROGRESSION_CONFIDENCE = 0.75
+AUTO_WARMUP = os.environ.get("AUTO_WARMUP", os.environ.get("WARMUP_ON_START", "true")).lower() == "true"
 
 # --- FLASK SETUP ---
 app = Flask(__name__)
@@ -903,6 +908,22 @@ def analyze_onetap():
 
 
 # --- WARMUP ENDPOINT (for cold-start optimization) ---
+def _run_warmup_inference():
+    """Run a dummy forward pass to cache weights and kernels."""
+    dummy_audio = np.zeros(int(0.5 * 16000), dtype=np.float32)
+
+    inputs = feature_extractor(
+        dummy_audio,
+        sampling_rate=16000,
+        return_tensors="pt",
+        padding=True,
+    )
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        _ = model(**inputs).logits
+
+
 @app.route("/warmup", methods=["POST"])
 def warmup():
     """
@@ -910,21 +931,8 @@ def warmup():
     Call this endpoint once after server startup to avoid latency on first real request.
     """
     try:
-        # Create a 0.5s silent audio buffer (16kHz, mono)
-        dummy_audio = np.zeros(int(0.5 * 16000), dtype=np.float32)
-        
-        # Run a forward pass to warm up the model
-        inputs = feature_extractor(
-            dummy_audio,
-            sampling_rate=16000,
-            return_tensors="pt",
-            padding=True,
-        )
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        
-        with torch.no_grad():
-            _ = model(**inputs).logits
-        
+        _run_warmup_inference()
+
         return jsonify({
             "status": "warmed_up",
             "model": "WavLM",
@@ -946,7 +954,14 @@ def health():
     }), 200
 
 
+if AUTO_WARMUP:
+    try:
+        _run_warmup_inference()
+        print("✅ Warmup on start complete")
+    except Exception as e:
+        print(f"⚠️ Warmup on start failed: {e}")
+
+
 if __name__ == "__main__":
     # Debug=False prevents reloading large models twice
     app.run(host="0.0.0.0", port=PORT, debug=False)
-    warmup()
