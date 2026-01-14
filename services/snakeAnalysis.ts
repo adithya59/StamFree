@@ -45,6 +45,7 @@ export interface SnakeAnalysisResult {
   metrics: Record<string, number | boolean>;
   gamePass: boolean;
   clinicalPass: boolean;
+  xp_earned?: number;  // Backend's deduction-based XP (100 - penalties)
 }
 
 /**
@@ -71,7 +72,8 @@ export interface SnakeAnalysisResult {
 export async function analyzeSnakeAudio(
   audioUri: string,
   gameMetrics: GameMetrics,
-  promptPhoneme?: string
+  promptPhoneme?: string,
+  tier?: number
 ): Promise<SnakeAnalysisResult | null> {
   const analysisStartTime = performance.now();
   let lastError: Error | null = null;
@@ -101,6 +103,14 @@ export async function analyzeSnakeAudio(
           // Ignore if form append fails
         }
       }
+      
+      if (tier) {
+        try {
+          formData.append('tier', tier.toString());
+        } catch (_) {
+          // Ignore if form append fails
+        }
+      }
       const url = getAnalyzeUrl('snake');
       
       // Upload with 10 second timeout
@@ -118,9 +128,9 @@ export async function analyzeSnakeAudio(
       // Normalize to unified format
       const unified = normalizeSnake(snakeRes);
 
-      // Calculate stars from AI result
-      // Use backend's starsAwarded which accounts for game_pass, repetition, and phoneme match
-      let stars: 1 | 2 | 3 = (snakeRes.starsAwarded === 3) ? 3 : 1;
+      // Use backend's starsAwarded directly (accounts for blow_detected, repetition, phoneme match, continuity)
+      // Backend returns 1, 2, or 3 stars based on deduction logic
+      let stars: 1 | 2 | 3 = (snakeRes.starsAwarded as 1 | 2 | 3) || 1;
 
       // Log to Firestore activity_logs
       if (auth.currentUser) {
@@ -165,6 +175,7 @@ export async function analyzeSnakeAudio(
         metrics: unified.metrics,
         gamePass: unified.game_pass,
         clinicalPass: unified.clinical_pass,
+        xp_earned: snakeRes.xp_earned,  // Backend's deduction-based XP
       };
     } catch (error) {
       lastError = error as Error;

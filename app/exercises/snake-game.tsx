@@ -155,7 +155,7 @@ export default function SnakeGameScreen() {
         setIsSpeaking(true);
         const instruction = getInstructionText(sessionConfig.phoneme, sessionConfig.tier, sessionConfig.category);
         const voicePrompt = getPhonemeVoicePrompt(sessionConfig.example);
-        const fullText = `Deep breath... ${voicePrompt}. ${instruction}`;
+        const fullText = `Take a Deep breath in.... ${instruction}`;
         
         Speech.speak(fullText, {
           onDone: () => setIsSpeaking(false),
@@ -226,8 +226,8 @@ export default function SnakeGameScreen() {
             const stars = analysisData.aiResult?.stars ?? result.optimisticStars;
             setFinalStars(stars);
             
-            // Set earned XP for modal display (10 for success, 1 for effort)
-            const xp = stars === 3 ? 10 : 1; 
+            // Set earned XP from backend (tier-based deduction logic)
+            const xp = analysisData.aiResult?.xp_earned ?? (stars === 3 ? 10 : (stars === 2 ? 7 : 4)); 
             setEarnedXp(xp);
 
             let feedback = analysisData.aiResult?.feedback ?? 'Great effort!';
@@ -448,7 +448,7 @@ export default function SnakeGameScreen() {
               xpReward={earnedXp ?? 10} 
               totalXp={analysisResult?.totalXp || 0} 
               phonemeMatch={analysisResult?.aiResult?.metrics?.phoneme_match as boolean | undefined}
-              speechProb={speechProb}
+              speechProb={analysisResult?.aiResult?.confidence ?? speechProb}
               voicedDetected={voicedDetected}
               speechThreshold={SNAKE_CONFIG.SPEECH_PROB_MIN}
               isVoicedTarget={isVoicedTarget}

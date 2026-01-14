@@ -116,18 +116,31 @@ export function useSnakeSession(
           const aiResult = await analyzeSnakeAudio(
             audioUri,
             metrics,
-            sessionConfig.phoneme 
+            sessionConfig.phoneme,
+            sessionConfig.tier
           );
 
           const finalStars = aiResult ? aiResult.stars : optimisticStars;
-          const isSuccess = finalStars === 3; 
-          const xpEarned = isSuccess ? 10 : 1; // 10 XP for success, 1 for effort
+          // Use backend's xp_earned calculation (tier-based deduction)
+          // Fallback based on tier if backend doesn't return xp_earned
+          let xpEarned = aiResult?.xp_earned;
+          if (!xpEarned) {
+            // Tier 1: 10/7/4, Tier 2: 20/15/10, Tier 3: 30/23/16
+            const tier = sessionConfig.tier || 1;
+            if (tier === 1) {
+              xpEarned = finalStars === 3 ? 10 : (finalStars === 2 ? 7 : 4);
+            } else if (tier === 2) {
+              xpEarned = finalStars === 3 ? 20 : (finalStars === 2 ? 15 : 10);
+            } else {
+              xpEarned = finalStars === 3 ? 30 : (finalStars === 2 ? 23 : 16);
+            }
+          }
 
           // B. Update Playlist Mastery (The Slide)
           const { leveledUp, nextPhoneme } = await recordSnakeSessionResult(
             auth.currentUser!.uid,
             sessionConfig.targetId,
-            isSuccess
+            finalStars === 3  // Only "master" on 3 stars
           );
 
           // C. Update Global Stats (Streak, Weekly Sessions, XP)

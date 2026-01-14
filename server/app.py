@@ -5,6 +5,7 @@ import uuid
 import numpy as np
 import librosa
 import torch
+import torch.nn.functional as F
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -13,29 +14,37 @@ from pydub import AudioSegment
 from g2p_en import G2p
 import nltk
 from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
+import soundfile as sf
+
+# ============================================================================
+# StamFree Backend - WavLM Speech Analysis Server
+# ============================================================================
+# STARTUP OPTIMIZATION:
+# - First request takes ~7-8s due to model warmup (cold start)
+# - To eliminate this latency, call POST /warmup immediately after server starts
+# - This caches the model in GPU/CPU memory for subsequent requests (~1-2s each)
+# ============================================================================
 
 # --- NLTK SETUP ---
 try:
-    nltk.data.find("taggers/averaged_perceptron_tagger_eng")
+    nltk.data.find('taggers/averaged_perceptron_tagger_eng')
 except LookupError:
-    nltk.download("averaged_perceptron_tagger_eng")
-    nltk.download("cmudict")
+    nltk.download('averaged_perceptron_tagger_eng')
+    nltk.download('cmudict')
 
+# --- TORCH THREADING (reduce CPU context switching on small instances) ---
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+ 
 # --- CONFIGURATION ---
-PORT = int(os.environ.get("PORT", 5000))
-CREDENTIALS_PATH = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "credentials.json")
+PORT = int(os.environ.get('PORT', 5000))
+CREDENTIALS_PATH = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', 'credentials.json')
 
-# Check credentials
-if not os.path.exists(CREDENTIALS_PATH):
-    print(f"⚠️ WARNING: Google Cloud credentials not found at {CREDENTIALS_PATH}")
-
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = CREDENTIALS_PATH
-
-# --- WAV2VEC MODEL PATH ---
-# Prefer environment variable MODEL_PATH; fallback to repo-relative folder `server/final_stutter_wav2vec`
+# --- WAVLM MODEL PATH ---
+# Prefer environment variable MODEL_PATH; fallback to 'wavlm_model' folder
 MODEL_PATH = os.environ.get("MODEL_PATH")
 if not MODEL_PATH:
-    MODEL_PATH = os.path.join(os.path.dirname(__file__), "final_stutter_wav2vec")
+    MODEL_PATH = os.path.join(os.path.dirname(__file__), "wavlm_model")
 MODEL_PATH = os.path.abspath(MODEL_PATH)
 
 if not os.path.exists(MODEL_PATH):
@@ -46,13 +55,19 @@ if not os.path.exists(os.path.join(MODEL_PATH, "config.json")):
         f"❌ config.json not found in {MODEL_PATH}. Are you pointing to the right folder?"
     )
 
+# Check Paths
+if not os.path.exists(CREDENTIALS_PATH):
+    print(f"⚠️ WARNING: Google Cloud credentials not found at {CREDENTIALS_PATH}")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = CREDENTIALS_PATH
+
 # --- CONSTANTS & TUNING ---
 SAMPLE_RATE = 16000
-MAX_AUDIO_BYTES = 5 * 1024 * 1024  # 5MB
-ALLOWED_EXTENSIONS = {"wav", "m4a", "mp3"}
+MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10MB
+ALLOWED_EXTENSIONS = {'wav', 'm4a', 'mp3', 'webm'}
 SPEECH_PROB_MIN = float(os.environ.get("SPEECH_PROB_MIN", "0.35"))
 PITCHED_RATIO_MIN = float(os.environ.get("PITCHED_RATIO_MIN", "0.15"))
 PROGRESSION_CONFIDENCE = 0.75
+AUTO_WARMUP = os.environ.get("AUTO_WARMUP", os.environ.get("WARMUP_ON_START", "true")).lower() == "true"
 
 # --- FLASK SETUP ---
 app = Flask(__name__)
@@ -102,30 +117,31 @@ PHONEME_MAP = {
     "ZH": "zh",
 }
 
-# --- LOAD MODELS (IMMEDIATE LOADING) ---
-print("📥 Loading Wav2Vec 2.0 Model...")
+# --- LOAD CUSTOM WAVLM MODEL ---
+print("📥 Loading Custom WavLM Model...")
 try:
-    # Feature Extractor handles audio processing (16kHz resampling, padding)
-    processor = AutoFeatureExtractor.from_pretrained(MODEL_PATH)
-    # Audio Classification Model handles the prediction
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    # Load the extractor and model from your local folder
+    feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_PATH)
     model = AutoModelForAudioClassification.from_pretrained(MODEL_PATH)
-
-    # Optional: Move to GPU if available
-    # device = "cuda" if torch.cuda.is_available() else "cpu"
-    # model.to(device)
-
-    print("✅ Wav2Vec 2.0 System Ready!")
+    model.to(device)
+    model.eval()  # Set to inference mode
+    
+    # Get Label Mappings from the trained model config
+    id2label = model.config.id2label
+    print(f"✅ WavLM Model Loaded on {device}!")
+    print(f"   Labels: {id2label}")
 except Exception as e:
-    print(f"❌ Critical Error Loading Model: {e}")
+    print(f"❌ Error Loading Model: {e}")
+    print("   -> Ensure 'config.json' and 'pytorch_model.bin' are in the 'wavlm_model' folder.")
     raise e
-
-import soundfile as sf
 
 # --- HELPER FUNCTIONS ---
 
 def predict_file(audio_input):
     """
-    Manual prediction using Wav2Vec.
+    Manual prediction using WavLM.
     Accepts a filepath (str) OR a pre-loaded numpy array.
     Returns: (label_string, confidence_float)
     """
@@ -147,7 +163,7 @@ def predict_file(audio_input):
         audio = audio_input  # Assume already at 16kHz
 
     # 2. Process Audio (Normalize & Extract Features)
-    inputs = processor(
+    inputs = feature_extractor(
         audio,
         sampling_rate=16000,
         return_tensors="pt",
@@ -156,14 +172,17 @@ def predict_file(audio_input):
         max_length=16000 * 3,  # Max 3 seconds context
     )
 
-    # 3. Model Inference
+    # 3. Move to Device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    # 4. Model Inference
     with torch.no_grad():
         logits = model(**inputs).logits
 
-    # 4. Softmax for Probabilities
+    # 5. Softmax for Probabilities
     probs = torch.nn.functional.softmax(logits, dim=-1)
 
-    # 5. Get Winner
+    # 6. Get Winner
     score, id = torch.max(probs, dim=-1)
     label = model.config.id2label[id.item()]
 
@@ -225,7 +244,7 @@ def calculate_wpm(words_data):
 
 def analyze_voicing_noise(filepath):
     """
-    Return heuristics for anti-blow validation (Transferred from old app).
+    Return heuristics for anti-blow validation.
     """
     try:
         y, sr = librosa.load(filepath, sr=SAMPLE_RATE)
@@ -359,11 +378,10 @@ def analyze_audio():
     file.save(filepath)
 
     try:
-        # 1. RUN WAV2VEC PREDICTION
+        # 1. RUN WAVLM PREDICTION
         label, confidence = predict_file(filepath)
 
         # Logic: If label contains "fluent", it's fluent. Else it's a stutter.
-        # Note: Your model labels are likely "0_fluent", "1_block", etc.
         is_stutter = "fluent" not in label.lower()
         stutter_type = "Fluent"
 
@@ -404,7 +422,7 @@ def analyze_audio():
                 pass
 
 
-# --- EXERCISE ENDPOINTS (Fully Restored Logic) ---
+# --- EXERCISE ENDPOINTS ---
 
 
 @app.route("/analyze/turtle", methods=["POST"])
@@ -413,25 +431,17 @@ def analyze_turtle():
         return jsonify({"error": "No file"}), 400
     file = request.files["file"]
     filename = secure_filename(file.filename)
-
     filepath = os.path.join(os.getcwd(), filename)
-
     file.save(filepath)
 
     try:
-
         t0 = time.time()
 
-        # 2. Run Wav2Vec AI Prediction (Correctness)
-
-        # predict_file loads audio and compares it against your dataset model
-
+        # 2. Run WavLM AI Prediction (Correctness)
         label, score = predict_file(filepath)
 
         # Buffer: Only trigger 'block' if the AI is very confident
-
         is_stutter = "fluent" not in label.lower()
-
         block_detected = "block" in label.lower() and score > 0.75
 
         # 3. Run Google STT & WPM Check (Speed)
@@ -473,19 +483,17 @@ def analyze_turtle():
 
         # Custom Feedback for Turtle
         if not content_pass:
-            feedback = "Oops! That didn't sound quite right. Read the sentence on the screen!"
+            feedback = "Oops! That didn't sound quite right. Read the sentence on the screen! 🐢"
         elif wpm > 120:
-            feedback = (
-                "Whoa! Too fast for a turtle. Try to slow down and say it again."
-            )
+            feedback = "Whoa! Too fast for a turtle. Try to slow down and say it again. 🐢"
         elif wpm < 80 and wpm > 0:
-            feedback = "A bit too sleepy! Try to speed up just a little bit."
+            feedback = "A bit too sleepy! Try to speed up just a little bit. 🐢"
         elif wpm == 0:
-            feedback = "I couldn't hear you clearly. Try again?"
+            feedback = "I couldn't hear you clearly. Try again? 🐢"
         elif block_detected:
-            feedback = "Try to keep your speech smooth and flowing!"
+            feedback = "Try to keep your speech smooth and flowing! 🐢"
         else:
-            feedback = "Perfect turtle pace! Watch me go!"
+            feedback = "Perfect turtle pace! Watch me go! 🌟"
 
         elapsed_ms = int((time.time() - t0) * 1000)
 
@@ -505,244 +513,236 @@ def analyze_turtle():
         )
 
     except Exception as e:
-
         print(f"❌ Server Error in analyze_turtle: {e}")
-
         return jsonify({"error": str(e)}), 500
 
     finally:
-
         # 7. Cleanup: Delete audio file to save space
-
         if os.path.exists(filepath):
-
             try:
-
                 os.remove(filepath)
-
             except:
-
                 pass
 
 
 @app.route("/analyze/snake", methods=["POST"])
 def analyze_snake():
-    # ... (File validation code stays the same) ...
-    # Supports both field names for compatibility
+    # ---------------------------------------------------------
+    # 1. SETUP & VALIDATION
+    # ---------------------------------------------------------
     file = request.files.get("file") or request.files.get("audioFile")
     if not file:
-        return (
-            jsonify(
-                {"error": "Missing required field: audioFile", "code": "MISSING_FIELD"}
-            ),
-            400,
-        )
+        return jsonify({"error": "Missing audio", "code": "MISSING_FIELD"}), 400
 
     filename = secure_filename(file.filename)
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in ALLOWED_EXTENSIONS:
-        return (
-            jsonify(
-                {
-                    "error": "Invalid format. Supported: WAV, M4A, MP3",
-                    "code": "INVALID_FORMAT",
-                }
-            ),
-            400,
-        )
-
-    if request.content_length and request.content_length > MAX_AUDIO_BYTES:
-
-        return jsonify({"error": "File too large", "code": "FILE_TOO_LARGE"}), 400
-
-    # Retrieve Game Data
-
-    target_phoneme = request.form.get("targetPhoneme") or request.form.get(
-        "prompt_phoneme"
-    )
+    if not any(filename.lower().endswith(ext) for ext in [f".{e}" for e in ALLOWED_EXTENSIONS]):
+        return jsonify({"error": "Invalid format", "code": "INVALID_FORMAT"}), 400
 
     filepath = os.path.join(os.getcwd(), filename)
-
     file.save(filepath)
+    
     # Retrieve Game Data
+    target_phoneme = request.form.get("targetPhoneme") or request.form.get("prompt_phoneme")
+    tier = int(request.form.get("tier", 1))  # Default to tier 1 if not provided
 
     try:
         t0 = time.time()
-
-        # 1. AI Check (Wav2Vec)
+        
+        # Initialize Score (Perfect Start) - Tier-based XP
+        stars = 3
+        # XP ranges by tier:
+        # Tier 1: 5-10 XP (2-3 stars)
+        # Tier 2: 15-20 XP (2-3 stars)
+        # Tier 3: 20-30 XP (2-3 stars)
+        if tier == 1:
+            xp = 10  # Start at 10 for perfect (3 stars)
+            penalty_per_error = 3  # -3 XP per error (2 stars = 7 XP, 1 star = 4 XP)
+        elif tier == 2:
+            xp = 20  # Start at 20 for perfect (3 stars)
+            penalty_per_error = 5  # -5 XP per error (2 stars = 15 XP, 1 star = 10 XP)
+        else:  # tier 3+
+            xp = 30  # Start at 30 for perfect (3 stars)
+            penalty_per_error = 7  # -7 XP per error (2 stars = 23 XP, 1 star = 16 XP)
+        
+        feedback_msgs = []
+        
+        # ---------------------------------------------------------
+        # 2. RUN ANALYZERS
+        # ---------------------------------------------------------
+        
+        # A. AI Check (WavLM) for Repetitions
         label, score = predict_file(filepath)
         repetition_detected = "repetition" in label.lower()
 
-        # 2. Amplitude Check
+        # B. Amplitude Check (Continuity & Duration)
         amp_data = analyze_amplitude(filepath)
-        game_pass = amp_data["amplitude_sustained"]
-        clinical_pass = not repetition_detected
-
-        # 3. Voicing / Anti-Blow Logic
+        
+        # C. Voicing Check (Physics)
         voicing = analyze_voicing_noise(filepath)
 
-        # 4. Phoneme Validation (Google STT)
+        # D. Phoneme Validation (Google STT)
+        full_text, words = get_google_transcript(filepath)
+        
+        # Helper: Check if transcript matches target
         phoneme_match = None
-        if target_phoneme:
-            try:
-                # We analyze the whole file to capture the "L-aaaa" context which helps STT
-                full_text, words = get_google_transcript(filepath)
+        if target_phoneme and words:
+            # Reuse existing matching logic
+            target = target_phoneme.strip().lower()
+            found = False
+            for w in words:
+                try:
+                    phonemes = g2p(w["word"])
+                    clean = [p for p in phonemes if p not in [" ", "'"]]
+                    for p in clean:
+                        raw = "".join([i for i in p if not i.isdigit()])
+                        mapped = PHONEME_MAP.get(raw, raw.lower())
+                        if mapped.lower() == target:
+                            found = True
+                            break
+                    if found:
+                        break
+                except:
+                    pass
+            phoneme_match = found
+        
+        # Conservative fallback: Keep phoneme_match as None if we cannot verify via STT
+        # Do NOT assume a match based on WavLM score alone, as WavLM detects fluency, not phoneme correctness
+        # If match is None (unverified), it won't trigger a penalty in RULE 3
 
-                if words:
-                    target = target_phoneme.strip().lower()
-                    found = False
-                    for w in words:
-                        try:
-                            phonemes = g2p(w["word"])
-                            clean = [p for p in phonemes if p not in [" ", "'"]]
-                            for p in clean:
-                                raw = "".join([i for i in p if not i.isdigit()])
-                                mapped = PHONEME_MAP.get(raw, raw.lower())
-                                if mapped.lower() == target:
-                                    found = True
-                                    break
-                            if found:
-                                break
-                        except Exception:
-                            pass
-                    phoneme_match = found
-                else:
-                    # STT detected no words - trust voicing detection instead
-                    if voicing["voiced_detected"]:
-                        # Benefit of Doubt: If STT missed it but we have strong voicing AND high AI fluency confidence, assume match.
-                        if score > 0.85:
-                            phoneme_match = True
-                        else:
-                            phoneme_match = None  # Unclear
-                    else:
-                        phoneme_match = False  # Silence/Hum usually means no word found
+        # ---------------------------------------------------------
+        # 3. APPLY DEDUCTION LOGIC
+        # ---------------------------------------------------------
 
-            except Exception as e:
-                print(f"STT Error: {e}")
-                phoneme_match = None
+        # RULE 1: CONTINUITY (Must be sustained without breaks)
+        # Check amp_data['amplitude_sustained']
+        if not amp_data["amplitude_sustained"]:
+            stars -= 1
+            xp -= penalty_per_error
+            feedback_msgs.append("Keep the sound smooth without stopping!")
 
-        # 5. Anti-Blow Rule (CRITICAL FIX)
+        # RULE 2: ANTI-BLOW / VOICING (Must hum, not blow)
         blow_detected = False
-
         if target_phoneme:
-            # These sounds MUST have vibration/pitch. If they don't, it's just air.
-            voiced_targets = {
-                "a",
-                "e",
-                "i",
-                "o",
-                "u",
-                "oo",
-                "ee",
-                "er",
-                "m",
-                "n",
-                "l",
-                "r",
-                "w",
-                "y",
-                "ng",
-                "v",
-                "z",
-                "j",
-            }
+            voiced_targets = {'a','e','i','o','u','oo','ee','er','m','n','l','r','w','y','ng','v','z','j'}
             target_clean = target_phoneme.strip().lower()
-
+            
             if target_clean in voiced_targets:
-                # Evidence for speech:
-                # 1. Google STT matched the phoneme (Strongest evidence)
-                # 2. AI Wav2Vec score is very high (High confidence speech)
-                # 3. Voicing detected BUT only if STT didn't explicitly fail to find words
-
-                # If STT found nothing (None), we shouldn't trust simple voicing because blowing can have pitch.
-                # In that case, we rely on the AI model's confidence.
-                if phoneme_match is None:
-                    # STRICTER: For voiced targets, we require actual voicing signal.
-                    # We removed 'score > 0.85' fallback because it allowed unvoiced "S" to pass for "M".
-                    speech_likely = voicing['voiced_detected']
-                else:
-                    # STT found something (True/False) or voicing is strong
-                    speech_likely = voicing['voiced_detected'] or (phoneme_match is True)
-
+                # Evidence for speech: Voicing detected OR Phoneme matched
+                speech_likely = voicing['voiced_detected'] or (phoneme_match is True)
+                
                 if not speech_likely:
-                    print(
-                        f"[Analysis] Blow detected for voiced target '{target_clean}'"
-                    )
                     blow_detected = True
+                    stars -= 1
+                    xp -= penalty_per_error
+                    feedback_msgs.append("Don't just blow air! Use your voice.")
 
-                    # FORCE FAIL:
-                    # Even if it was loud (amplitude), it wasn't speech.
-                    game_pass = False
-
-                    # Update metrics to reflect reality
-                    phoneme_match = False
-
-        # 6. Override Logic (Trust Physics + Content)
-        if game_pass and (phoneme_match is True):
-            repetition_detected = False
-
-        # 7. Final Classification
-        clinical_pass = not repetition_detected
-        is_hit = game_pass and clinical_pass
-
-        is_stutter = repetition_detected  # In snake, not holding duration isn't a stutter, just a "fail"
-
-        stutter_type = "Fluent"
-        if repetition_detected:
-            stutter_type = "Repetition"
-        elif not game_pass:
-            stutter_type = "Block"  # Or just "Short Duration"
-
-        # ... logic flow ...
-
-        # If we detected blowing, override everything to ensure failure
-        if blow_detected:
-            stutter_type = 'Noise' # Or 'Block'
-            stars_awarded = 1
-        elif phoneme_match is False:
-            # Explicit mismatch (STT heard something else clearly)
-            stutter_type = 'Mismatch'
-            stars_awarded = 1
-        else:
-            # Normal logic
-            if stutter_type == 'Fluent':
-                stars_awarded = 3
-            else:
-                stars_awarded = 1
-
-        # Calculate Confidence (0.0 - 1.0)
-        confidence_score = 0.0
-        if game_pass:
-            confidence_score += 0.4
-        if clinical_pass:
-            confidence_score += 0.3
-
-        if phoneme_match is True:
-            confidence_score += 0.2
+        # RULE 3: CONTENT (Must be the correct sound)
+        if phoneme_match is False:
+            # Definitely wrong sound detected - this is a critical failure
+            # Deduct 2 stars (or force to 1 star minimum)
+            stars -= 2
+            xp -= penalty_per_error * 2
+            feedback_msgs.append(f"I didn't hear the '{target_phoneme}' sound.")
         elif phoneme_match is None:
-            confidence_score += 0.1  # Benefit of doubt
+            # Unverified: Google STT couldn't confirm the phoneme
+            # Cap at 2 stars max (can't get perfect score without verification)
+            if stars == 3:
+                stars = 2
+                xp -= penalty_per_error // 2  # Half penalty for uncertainty
+                feedback_msgs.append(f"Try to say '{target_phoneme}' more clearly!")
 
-        if voicing["voiced_detected"]:
-            confidence_score += 0.1
+        # RULE 4: REPETITION (Must not stutter)
+        # Only deduct if we haven't already deducted for amplitude (avoid double penalty)
+        if repetition_detected:
+            if amp_data["amplitude_sustained"]:
+                stars -= 1
+                xp -= penalty_per_error
+                feedback_msgs.append("Try not to repeat the sound.")
 
+        # ---------------------------------------------------------
+        # 4. FINALIZE SCORES
+        # ---------------------------------------------------------
+        
+        # Floor values: Minimum 1 Star for effort
+        stars = max(1, stars)
+        # Minimum XP based on tier: 1 XP for showing up
+        xp = max(1, xp)
+        
+        # Determine strict Pass/Fail for the game loop
+        # Pass = 2 or 3 stars. Fail = 1 star.
+        is_pass = stars >= 2
+        
+        # Construct Feedback String
+        final_feedback = " ".join(feedback_msgs) if feedback_msgs else "Perfect smooth speech! 🌟"
+
+        # Determine Stutter Type (For analytics only, not scoring)
+        stutter_type = "Fluent"
+        if blow_detected:
+            stutter_type = "Noise"
+        elif repetition_detected:
+            stutter_type = "Repetition"
+        elif not amp_data["amplitude_sustained"]:
+            stutter_type = "Block"
+        elif phoneme_match is False:
+            stutter_type = "Mismatch"
+
+        # Calculate composite confidence (combines fluency + phoneme accuracy)
+        # WavLM score is for fluency detection, but we need to adjust for phoneme correctness
+        composite_confidence = float(score)  # Start with WavLM fluency score
+        
+        if phoneme_match is True:
+            # Verified correct phoneme: Keep high confidence
+            composite_confidence = min(0.95, composite_confidence + 0.05)
+        elif phoneme_match is False:
+            # Rejected (wrong phoneme): Reduce confidence significantly
+            composite_confidence = min(0.65, composite_confidence * 0.65)
+        elif phoneme_match is None:
+            # Unverified: Moderate reduction (we can't confirm correctness)
+            composite_confidence = min(0.80, composite_confidence * 0.85)
+        
+        # Further reduce if other issues detected
+        if blow_detected:
+            composite_confidence *= 0.7
+        if not amp_data["amplitude_sustained"]:
+            composite_confidence *= 0.8
+
+        # Build response with both old format (for normalizeSnake) and new format (for debugging)
         response_payload = {
-            "sessionId": request.form.get("sessionId") or str(uuid.uuid4()),
-            "isStutter": is_stutter,
-            "stutterType": stutter_type,
-            "confidence": round(confidence_score, 2),
-            "starsAwarded": stars_awarded,
-            "game_pass": game_pass,
-            "clinical_pass": clinical_pass,
-            "phoneme_match": phoneme_match,
-            "voiced_detected": voicing['voiced_detected'],
-            "duration_sec": amp_data['duration_sec'],
-            "amplitude_sustained": amp_data['amplitude_sustained'],
+            # For normalizeSnake compatibility
+            "game_pass": is_pass,
+            "clinical_pass": not blow_detected and not repetition_detected,
+            "feedback": final_feedback,
+            "confidence": round(composite_confidence, 2),  # Use composite confidence
+            "duration_sec": amp_data["duration_sec"],
+            "amplitude_sustained": amp_data["amplitude_sustained"],
             "repetition_detected": repetition_detected,
-            "feedback": get_feedback('snake', is_hit, 'Repetition' if repetition_detected else None),
-            "speech_prob": float(score),
+            "isStutter": not is_pass,
+            "phoneme_match": phoneme_match,
+            "voiced_detected": voicing["voiced_detected"],
+            "speech_prob": float(score),  # Keep original WavLM score for debugging
+            
+            # New format fields
+            "sessionId": request.form.get("sessionId") or str(uuid.uuid4()),
+            "stutterType": stutter_type,
+            "starsAwarded": stars,
+            "xp_earned": xp,
+            
+            # Debug Metrics
+            "metrics": {
+                "blow_detected": blow_detected,
+                "repetition": repetition_detected,
+                "continuity": amp_data["amplitude_sustained"],
+                "match": phoneme_match,
+                "transcript": full_text,  # What Google STT heard
+                "match_status": "verified" if phoneme_match is True else ("rejected" if phoneme_match is False else "unverified")
+            },
             "inferenceTimeMs": int((time.time() - t0) * 1000),
         }
         return jsonify(response_payload)
+
+    except Exception as e:
+        print(f"Snake Analysis Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
     finally:
         if os.path.exists(filepath):
@@ -764,15 +764,15 @@ def analyze_balloon():
     try:
         t0 = time.time()
 
-        # 1. AI Check (Wav2Vec)
+        # 1. AI Check (WavLM)
         label, score = predict_file(filepath)
 
-        # Hard attack often sounds like a block or a very high confidence stutter start
+        # Hard attack often sounds like a block
         hard_attack = "block" in label.lower() or (
             score > 0.9 and "fluent" not in label.lower()
         )
 
-        # 2. Breath Check (Restored Logic)
+        # 2. Breath Check
         breath_data = detect_breath(filepath)
         game_pass = breath_data["breath_detected"]
 
@@ -809,13 +809,7 @@ def analyze_onetap():
     Strategy:
     - Use Google STT to count words (1 word = success, >1 = repetition)
     - Validate duration (0.5x to 2.5x expected duration)
-    - Use Wav2Vec as fallback confidence check
-    
-    Expected form data:
-    - audio: Audio file (m4a/wav/mp3)
-    - target_word: Target word (e.g., "Spaghetti")
-    - syllables: JSON array of syllables (e.g., ["Spa", "ghet", "ti"])
-    - duration: Recording duration in seconds
+    - Use WavLM as fallback confidence check
     """
     if "audio" not in request.files:
         return jsonify({"error": "No audio file"}), 400
@@ -848,7 +842,7 @@ def analyze_onetap():
             transcript, words_data = get_google_transcript(filepath)
             transcript = transcript.strip()
             
-            # Count words (split by spaces, filter empty)
+            # Count words
             word_list = [w for w in transcript.lower().split() if w]
             word_count = len(word_list)
             
@@ -857,11 +851,9 @@ def analyze_onetap():
                 stt_confidence = sum(w.get("confidence", 0) for w in words_data) / len(words_data)
         except Exception as e:
             print(f"STT Error: {e}")
-            # Fallback: Use Wav2Vec only
-            word_count = -1  # Unknown
-        
+            word_count = -1
+
         # 2. Duration validation
-        # Expected duration: ~0.15s per syllable + 0.5s baseline
         syllable_count = len(syllables) if syllables else 2
         expected_duration = (syllable_count * 0.15) + 0.5
         
@@ -869,36 +861,27 @@ def analyze_onetap():
         max_duration = expected_duration * 2.5
         duration_valid = min_duration <= duration <= max_duration
         
-        # 3. Wav2Vec check (fluency confidence)
-        label, wav2vec_score = predict_file(filepath)
+        # 3. WavLM check
+        label, wavlm_score = predict_file(filepath)
         is_fluent = "fluent" in label.lower()
         
         # 4. Final decision
-        # Repetition detected if:
-        # - Word count > 1 (clear repetition from STT)
-        # - OR duration too long (suggests multiple attempts)
-        # - OR Wav2Vec detects non-fluent speech
         repetition_detected = False
         repetition_probability = 0.0
         
         if word_count > 1:
-            # Clear repetition from STT
             repetition_detected = True
             repetition_probability = 0.9
         elif word_count == 1 and duration_valid and is_fluent:
-            # Perfect: One word, good duration, fluent
             repetition_detected = False
             repetition_probability = 0.1
         elif not duration_valid and duration > max_duration:
-            # Took too long (likely repeated)
             repetition_detected = True
             repetition_probability = 0.7
         elif not is_fluent:
-            # Wav2Vec detected disfluency
             repetition_detected = True
-            repetition_probability = wav2vec_score
+            repetition_probability = wavlm_score
         else:
-            # Edge case: STT failed but Wav2Vec says fluent
             repetition_detected = False
             repetition_probability = 0.3
         
@@ -906,13 +889,13 @@ def analyze_onetap():
             {
                 "repetition_detected": repetition_detected,
                 "repetition_probability": repetition_probability,
-                "confidence": max(stt_confidence, wav2vec_score),
+                "confidence": max(stt_confidence, wavlm_score),
                 "word_count": word_count,
                 "transcript": transcript,
                 "duration_valid": duration_valid,
                 "expected_duration": expected_duration,
-                "wav2vec_label": label,
-                "wav2vec_confidence": wav2vec_score,
+                "wavlm_label": label,
+                "wavlm_confidence": wavlm_score,
                 "elapsed_ms": int((time.time() - t0) * 1000),
             }
         )
@@ -924,10 +907,59 @@ def analyze_onetap():
                 pass
 
 
+# --- WARMUP ENDPOINT (for cold-start optimization) ---
+def _run_warmup_inference():
+    """Run a dummy forward pass to cache weights and kernels."""
+    dummy_audio = np.zeros(int(0.5 * 16000), dtype=np.float32)
+
+    inputs = feature_extractor(
+        dummy_audio,
+        sampling_rate=16000,
+        return_tensors="pt",
+        padding=True,
+    )
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        _ = model(**inputs).logits
+
+
+@app.route("/warmup", methods=["POST"])
+def warmup():
+    """
+    Initialize model inference on a dummy audio to cache everything in memory.
+    Call this endpoint once after server startup to avoid latency on first real request.
+    """
+    try:
+        _run_warmup_inference()
+
+        return jsonify({
+            "status": "warmed_up",
+            "model": "WavLM",
+            "device": device,
+            "message": "Model is now cached in memory for optimal performance"
+        }), 200
+    except Exception as e:
+        print(f"⚠️ Warmup failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # --- HEALTH CHECK ---
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "model": "Wav2Vec 2.0"}), 200
+    return jsonify({
+        "status": "ok", 
+        "model": "WavLM", 
+        "device": device
+    }), 200
+
+
+if AUTO_WARMUP:
+    try:
+        _run_warmup_inference()
+        print("✅ Warmup on start complete")
+    except Exception as e:
+        print(f"⚠️ Warmup on start failed: {e}")
 
 
 if __name__ == "__main__":
