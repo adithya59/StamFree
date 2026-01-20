@@ -16,7 +16,6 @@ import { getAnalyzeUrl } from '@/config/backend';
 import { auth } from '@/config/firebaseConfig';
 import type { GameMetrics } from '@/hooks/useSnakeGame';
 import { createFormData, uploadAudioWithTimeout, type UploadResult } from '@/services/audio';
-import { normalizeSnake, type SnakeResponse } from '@/services/clinicalLogic';
 import { saveExerciseAttempt } from '@/services/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -36,6 +35,38 @@ interface QueuedAttempt {
 }
 
 /**
+ * New standardized API response format
+ */
+interface SnakeAPIResponse {
+  success: boolean;
+  data?: {
+    gamePass: boolean;
+    clinicalPass: boolean;
+    stars: 1 | 2 | 3;
+    xp: number;
+    feedback: string;
+    metrics: {
+      duration: number;
+      continuity: boolean;
+      phonemeMatch: boolean | null;
+      repetition: boolean;
+      noiseDetected: boolean;
+      voicedRatio: number;
+    };
+    debug: {
+      stutterType: string;
+      confidence: number;
+      wavlmLabel: string;
+      sttTranscript: string;
+      requestId?: string;
+      inferenceTimeMs?: number;
+    };
+  };
+  error?: string;
+  code?: string;
+}
+
+/**
  * Result from AI analysis with star calculation
  */
 export interface SnakeAnalysisResult {
@@ -45,7 +76,7 @@ export interface SnakeAnalysisResult {
   metrics: Record<string, number | boolean>;
   gamePass: boolean;
   clinicalPass: boolean;
-  xp_earned?: number;  // Backend's deduction-based XP (100 - penalties)
+  xp: number;
 }
 
 /**
@@ -111,6 +142,7 @@ export async function analyzeSnakeAudio(
           // Ignore if form append fails
         }
       }
+      // Use new /snake/analyze endpoint
       const url = getAnalyzeUrl('snake');
       
       // Upload with 10 second timeout
@@ -122,15 +154,18 @@ export async function analyzeSnakeAudio(
         continue; // Retry
       }
 
-      const snakeRes = result.json as SnakeResponse;
-      console.log('[SnakeAnalysis] Backend result:', snakeRes);
+      const apiResponse = result.json as SnakeAPIResponse;
+      console.log('[SnakeAnalysis] Backend result:', apiResponse);
 
-      // Normalize to unified format
-      const unified = normalizeSnake(snakeRes);
+      // Check for API-level errors
+      if (!apiResponse.success || !apiResponse.data) {
+        lastError = new Error(apiResponse.error || 'Analysis failed');
+        console.error('[SnakeAnalysis] API error:', lastError.message);
+        continue; // Retry
+      }
 
-      // Use backend's starsAwarded directly (accounts for blow_detected, repetition, phoneme match, continuity)
-      // Backend returns 1, 2, or 3 stars based on deduction logic
-      let stars: 1 | 2 | 3 = (snakeRes.starsAwarded as 1 | 2 | 3) || 1;
+      const data = apiResponse.data;
+      const stars = data.stars;
 
       // Log to Firestore activity_logs
       if (auth.currentUser) {
@@ -138,12 +173,13 @@ export async function analyzeSnakeAudio(
           await saveExerciseAttempt({
             uid: auth.currentUser.uid,
             exerciseType: 'snake',
-            gamePass: unified.game_pass,
-            clinicalPass: unified.clinical_pass,
-            confidence: unified.confidence,
-            feedback: unified.feedback,
+            gamePass: data.gamePass,
+            clinicalPass: data.clinicalPass,
+            confidence: data.debug.confidence,
+            feedback: data.feedback,
             metrics: {
-              ...unified.metrics,
+              ...data.metrics,
+              phonemeMatch: data.metrics.phonemeMatch ?? false, // Convert null to false
               // Include game metrics
               durationAchieved: gameMetrics.durationAchieved,
               targetDuration: gameMetrics.targetDuration,
@@ -169,13 +205,13 @@ export async function analyzeSnakeAudio(
       }
 
       return {
-        stars,
-        feedback: unified.feedback,
-        confidence: unified.confidence,
-        metrics: unified.metrics,
-        gamePass: unified.game_pass,
-        clinicalPass: unified.clinical_pass,
-        xp_earned: snakeRes.xp_earned,  // Backend's deduction-based XP
+        stars: data.stars,
+        feedback: data.feedback,
+        confidence: data.debug.confidence,
+        metrics: data.metrics as Record<string, number | boolean>,
+        gamePass: data.gamePass,
+        clinicalPass: data.clinicalPass,
+        xp: data.xp,
       };
     } catch (error) {
       lastError = error as Error;

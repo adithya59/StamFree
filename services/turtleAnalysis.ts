@@ -11,12 +11,20 @@ export interface TurtleAnalysisResult extends UnifiedResult {
  */
 export async function analyzeTurtleAudio(
   audioUri: string,
-  targetText?: string
+  targetText?: string,
+  tier?: number,
+  requiredPauses?: number
 ): Promise<TurtleAnalysisResult | null> {
   try {
     const formData = createFormData(audioUri);
     if (targetText) {
         formData.append('targetText', targetText);
+    }
+    if (tier !== undefined) {
+        formData.append('tier', tier.toString());
+    }
+    if (requiredPauses !== undefined) {
+        formData.append('requiredPauses', requiredPauses.toString());
     }
 
     const url = getAnalyzeUrl('turtle');

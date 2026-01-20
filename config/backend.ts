@@ -8,7 +8,7 @@ const BACKEND_BASE_URL =
 // Centralized route map for clarity and reuse
 export const BACKEND_ROUTES = {
   health: `${BACKEND_BASE_URL}/health`,
-  analyzeSnake: `${BACKEND_BASE_URL}/analyze/snake`,
+  analyzeSnake: `${BACKEND_BASE_URL}/snake/analyze`,
   analyzeTurtle: `${BACKEND_BASE_URL}/analyze/turtle`,
   analyzeBalloon: `${BACKEND_BASE_URL}/analyze/balloon`,
   analyzeOneTap: `${BACKEND_BASE_URL}/analyze/onetap`,

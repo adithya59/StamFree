@@ -2,6 +2,7 @@ import os
 import io
 import time
 import uuid
+import random
 import numpy as np
 import librosa
 import torch
@@ -450,6 +451,8 @@ def analyze_turtle():
 
         # Content Matching Logic
         target_text = request.form.get("targetText", "")
+        tier = int(request.form.get("tier", 1))
+        required_pauses = int(request.form.get("requiredPauses", 0))
         content_pass = True
 
         if target_text and text:
@@ -467,15 +470,15 @@ def analyze_turtle():
         print("\n" + "🐢" * 15)
         print(f"DEBUG ANALYSIS: {filename}")
         print(f"WORD SAID: '{text}'")
-        print(f"SPEED: {wpm} WPM (Target: 80-120)")
+        print(f"SPEED: {wpm} WPM (Target: 70-130)")
         print(f"AI LABEL: {label}")
         print(f"CONFIDENCE: {score:.4f}")
         print(f"BLOCK DETECTED: {block_detected}")
         print("🐢" * 15 + "\n")
 
         # 5. Define Passing Conditions
-        # Therapeutic Target: 80 - 120 WPM (Turtle Mode)
-        game_pass = 80 <= wpm <= 120
+        # Therapeutic Target: 70 - 130 WPM (Turtle Mode)
+        game_pass = 70 <= wpm <= 130
         clinical_pass = not block_detected
 
         # The turtle moves if BOTH conditions are met AND content matches
@@ -483,21 +486,87 @@ def analyze_turtle():
 
         # Custom Feedback for Turtle
         if not content_pass:
-            feedback = "Oops! That didn't sound quite right. Read the sentence on the screen! 🐢"
-        elif wpm > 120:
-            feedback = "Whoa! Too fast for a turtle. Try to slow down and say it again. 🐢"
-        elif wpm < 80 and wpm > 0:
-            feedback = "A bit too sleepy! Try to speed up just a little bit. 🐢"
+            feedback = "Oops! That didn't sound quite right. Read the sentence on the screen."
+        elif wpm > 130:
+            feedback = "Too fast! Try to slow down and say it again."
+        elif wpm < 70 and wpm > 0:
+            feedback = "A bit too slow. Try speaking a little faster."
         elif wpm == 0:
-            feedback = "I couldn't hear you clearly. Try again? 🐢"
+            feedback = "I couldn't hear you clearly. Try again."
         elif block_detected:
-            feedback = "Try to keep your speech smooth and flowing! 🐢"
+            feedback = "Try to keep your speech smooth and flowing."
+        
+        # 6. Pause Detection (Tier 2/3 only)
+        pause_bonus = False
+        detected_pauses = 0
+        
+        if tier >= 2 and required_pauses > 0:
+            # Load audio for RMS analysis
+            y, sr = librosa.load(filepath, sr=SAMPLE_RATE)
+            
+            # Calculate RMS energy
+            rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=512)[0]
+            
+            # Silence threshold (tune based on dataset)
+            silence_threshold = 0.02
+            
+            # Find silence regions
+            is_silent = rms < silence_threshold
+            
+            # Track pause regions
+            start_frame = None
+            for i, silent in enumerate(is_silent):
+                if silent and start_frame is None:
+                    start_frame = i
+                elif not silent and start_frame is not None:
+                    # Calculate silence duration
+                    silence_duration_ms = ((i - start_frame) * 512 / sr) * 1000
+                    if silence_duration_ms >= 200:  # 200ms minimum
+                        detected_pauses += 1
+                    start_frame = None
+            
+            pause_bonus = detected_pauses >= required_pauses
+            
+            print(f"PAUSE CHECK: Tier {tier}, Required: {required_pauses}, Detected: {detected_pauses}, Bonus: {pause_bonus}")
+        
+        # Generate feedback based on results
+        if not game_pass or not clinical_pass or not content_pass:
+            # Varied failure messages (no emojis, constructive)
+            failure_messages = [
+                "Let's try that again. Take your time.",
+                "Not quite right. Remember to speak slowly.",
+                "Almost there! Try going a bit slower.",
+                "Good effort. Let's practice that one more time.",
+                "Keep trying! Speak each word clearly.",
+                "You can do it! Just a little slower this time."
+            ]
+            feedback = random.choice(failure_messages)
+        elif pause_bonus:
+            # Success with good pauses (Tier 2/3)
+            pause_success_messages = [
+                "Excellent! Your pauses were perfect.",
+                "Great job! You paused at the right spots.",
+                "Wonderful pacing with those pauses.",
+                "Well done! Your rhythm was spot on."
+            ]
+            feedback = random.choice(pause_success_messages)
         else:
-            feedback = "Perfect turtle pace! Watch me go! 🌟"
+            # Regular success messages (no emojis, encouraging)
+            success_messages = [
+                "Great job! You spoke slowly and clearly.",
+                "Wonderful! That was nice and steady.",
+                "Excellent! You took your time with each word.",
+                "Well done! Your pace was just right.",
+                "Amazing! You spoke calmly and smoothly.",
+                "Fantastic! That was very controlled speech.",
+                "Super! You kept a good steady rhythm.",
+                "Brilliant! Your words were clear and spaced out."
+            ]
+            feedback = random.choice(success_messages)
 
         elapsed_ms = int((time.time() - t0) * 1000)
 
-        # 6. Return Response to React Native App
+        # 7. Return Response to React Native App
         return jsonify(
             {
                 "wpm": wpm,
@@ -509,6 +578,8 @@ def analyze_turtle():
                 "transcript": text,
                 "feedback": feedback,
                 "elapsed_ms": elapsed_ms,
+                "pauseBonus": pause_bonus,
+                "detectedPauses": detected_pauses,
             }
         )
 
@@ -525,68 +596,61 @@ def analyze_turtle():
                 pass
 
 
-@app.route("/analyze/snake", methods=["POST"])
+# ---------------------------------------------------------
+# SNAKE GAME ENDPOINT
+# ---------------------------------------------------------
+@app.route("/snake/analyze", methods=["POST"])
 def analyze_snake():
-    # ---------------------------------------------------------
     # 1. SETUP & VALIDATION
-    # ---------------------------------------------------------
     file = request.files.get("file") or request.files.get("audioFile")
     if not file:
-        return jsonify({"error": "Missing audio", "code": "MISSING_FIELD"}), 400
+        return jsonify({"success": False, "error": "Missing audio", "code": "MISSING_FIELD"}), 400
 
     filename = secure_filename(file.filename)
     if not any(filename.lower().endswith(ext) for ext in [f".{e}" for e in ALLOWED_EXTENSIONS]):
-        return jsonify({"error": "Invalid format", "code": "INVALID_FORMAT"}), 400
+        return jsonify({"success": False, "error": "Invalid format", "code": "INVALID_FORMAT"}), 400
 
     filepath = os.path.join(os.getcwd(), filename)
     file.save(filepath)
     
     # Retrieve Game Data
     target_phoneme = request.form.get("targetPhoneme") or request.form.get("prompt_phoneme")
-    tier = int(request.form.get("tier", 1))  # Default to tier 1 if not provided
+    tier = int(request.form.get("tier", 1))
 
     try:
         t0 = time.time()
         
-        # Initialize Score (Perfect Start) - Tier-based XP
+        # Initialize Score - Tier-based XP
         stars = 3
-        # XP ranges by tier:
-        # Tier 1: 5-10 XP (2-3 stars)
-        # Tier 2: 15-20 XP (2-3 stars)
-        # Tier 3: 20-30 XP (2-3 stars)
         if tier == 1:
-            xp = 10  # Start at 10 for perfect (3 stars)
-            penalty_per_error = 3  # -3 XP per error (2 stars = 7 XP, 1 star = 4 XP)
+            xp = 10
+            penalty_per_error = 3
         elif tier == 2:
-            xp = 20  # Start at 20 for perfect (3 stars)
-            penalty_per_error = 5  # -5 XP per error (2 stars = 15 XP, 1 star = 10 XP)
+            xp = 20
+            penalty_per_error = 5
         else:  # tier 3+
-            xp = 30  # Start at 30 for perfect (3 stars)
-            penalty_per_error = 7  # -7 XP per error (2 stars = 23 XP, 1 star = 16 XP)
+            xp = 30
+            penalty_per_error = 7
         
         feedback_msgs = []
         
-        # ---------------------------------------------------------
         # 2. RUN ANALYZERS
-        # ---------------------------------------------------------
-        
         # A. AI Check (WavLM) for Repetitions
         label, score = predict_file(filepath)
         repetition_detected = "repetition" in label.lower()
 
-        # B. Amplitude Check (Continuity & Duration)
+        # B. Amplitude Check
         amp_data = analyze_amplitude(filepath)
         
-        # C. Voicing Check (Physics)
+        # C. Voicing Check
         voicing = analyze_voicing_noise(filepath)
 
-        # D. Phoneme Validation (Google STT)
+        # D. Phoneme Validation
         full_text, words = get_google_transcript(filepath)
         
-        # Helper: Check if transcript matches target
+        # Check if transcript matches target
         phoneme_match = None
         if target_phoneme and words:
-            # Reuse existing matching logic
             target = target_phoneme.strip().lower()
             found = False
             for w in words:
@@ -604,30 +668,21 @@ def analyze_snake():
                 except:
                     pass
             phoneme_match = found
-        
-        # Conservative fallback: Keep phoneme_match as None if we cannot verify via STT
-        # Do NOT assume a match based on WavLM score alone, as WavLM detects fluency, not phoneme correctness
-        # If match is None (unverified), it won't trigger a penalty in RULE 3
 
-        # ---------------------------------------------------------
         # 3. APPLY DEDUCTION LOGIC
-        # ---------------------------------------------------------
-
-        # RULE 1: CONTINUITY (Must be sustained without breaks)
-        # Check amp_data['amplitude_sustained']
+        # RULE 1: CONTINUITY
         if not amp_data["amplitude_sustained"]:
             stars -= 1
             xp -= penalty_per_error
             feedback_msgs.append("Keep the sound smooth without stopping!")
 
-        # RULE 2: ANTI-BLOW / VOICING (Must hum, not blow)
+        # RULE 2: ANTI-BLOW / VOICING
         blow_detected = False
         if target_phoneme:
             voiced_targets = {'a','e','i','o','u','oo','ee','er','m','n','l','r','w','y','ng','v','z','j'}
             target_clean = target_phoneme.strip().lower()
             
             if target_clean in voiced_targets:
-                # Evidence for speech: Voicing detected OR Phoneme matched
                 speech_likely = voicing['voiced_detected'] or (phoneme_match is True)
                 
                 if not speech_likely:
@@ -636,46 +691,34 @@ def analyze_snake():
                     xp -= penalty_per_error
                     feedback_msgs.append("Don't just blow air! Use your voice.")
 
-        # RULE 3: CONTENT (Must be the correct sound)
+        # RULE 3: CONTENT
         if phoneme_match is False:
-            # Definitely wrong sound detected - this is a critical failure
-            # Deduct 2 stars (or force to 1 star minimum)
             stars -= 2
             xp -= penalty_per_error * 2
             feedback_msgs.append(f"I didn't hear the '{target_phoneme}' sound.")
         elif phoneme_match is None:
-            # Unverified: Google STT couldn't confirm the phoneme
-            # Cap at 2 stars max (can't get perfect score without verification)
             if stars == 3:
                 stars = 2
-                xp -= penalty_per_error // 2  # Half penalty for uncertainty
-                feedback_msgs.append(f"Try to say '{target_phoneme}' more clearly!")
+                xp -= penalty_per_error // 2
+                # Make feedback more helpful - show extended sound pattern
+                sound_pattern = target_phoneme * 5 if len(target_phoneme) == 1 else target_phoneme
+                feedback_msgs.append(f"Try to say '{sound_pattern}' more clearly!")
 
-        # RULE 4: REPETITION (Must not stutter)
-        # Only deduct if we haven't already deducted for amplitude (avoid double penalty)
+        # RULE 4: REPETITION
         if repetition_detected:
             if amp_data["amplitude_sustained"]:
                 stars -= 1
                 xp -= penalty_per_error
                 feedback_msgs.append("Try not to repeat the sound.")
 
-        # ---------------------------------------------------------
         # 4. FINALIZE SCORES
-        # ---------------------------------------------------------
-        
-        # Floor values: Minimum 1 Star for effort
         stars = max(1, stars)
-        # Minimum XP based on tier: 1 XP for showing up
         xp = max(1, xp)
-        
-        # Determine strict Pass/Fail for the game loop
-        # Pass = 2 or 3 stars. Fail = 1 star.
         is_pass = stars >= 2
-        
-        # Construct Feedback String
+        clinical_pass = not blow_detected and not repetition_detected
         final_feedback = " ".join(feedback_msgs) if feedback_msgs else "Perfect smooth speech! 🌟"
 
-        # Determine Stutter Type (For analytics only, not scoring)
+        # Determine Stutter Type
         stutter_type = "Fluent"
         if blow_detected:
             stutter_type = "Noise"
@@ -686,63 +729,50 @@ def analyze_snake():
         elif phoneme_match is False:
             stutter_type = "Mismatch"
 
-        # Calculate composite confidence (combines fluency + phoneme accuracy)
-        # WavLM score is for fluency detection, but we need to adjust for phoneme correctness
-        composite_confidence = float(score)  # Start with WavLM fluency score
-        
+        # Calculate composite confidence
+        composite_confidence = float(score)
         if phoneme_match is True:
-            # Verified correct phoneme: Keep high confidence
             composite_confidence = min(0.95, composite_confidence + 0.05)
         elif phoneme_match is False:
-            # Rejected (wrong phoneme): Reduce confidence significantly
             composite_confidence = min(0.65, composite_confidence * 0.65)
         elif phoneme_match is None:
-            # Unverified: Moderate reduction (we can't confirm correctness)
             composite_confidence = min(0.80, composite_confidence * 0.85)
-        
-        # Further reduce if other issues detected
         if blow_detected:
             composite_confidence *= 0.7
         if not amp_data["amplitude_sustained"]:
             composite_confidence *= 0.8
 
-        # Build response with both old format (for normalizeSnake) and new format (for debugging)
-        response_payload = {
-            # For normalizeSnake compatibility
-            "game_pass": is_pass,
-            "clinical_pass": not blow_detected and not repetition_detected,
-            "feedback": final_feedback,
-            "confidence": round(composite_confidence, 2),  # Use composite confidence
-            "duration_sec": amp_data["duration_sec"],
-            "amplitude_sustained": amp_data["amplitude_sustained"],
-            "repetition_detected": repetition_detected,
-            "isStutter": not is_pass,
-            "phoneme_match": phoneme_match,
-            "voiced_detected": voicing["voiced_detected"],
-            "speech_prob": float(score),  # Keep original WavLM score for debugging
-            
-            # New format fields
-            "sessionId": request.form.get("sessionId") or str(uuid.uuid4()),
-            "stutterType": stutter_type,
-            "starsAwarded": stars,
-            "xp_earned": xp,
-            
-            # Debug Metrics
-            "metrics": {
-                "blow_detected": blow_detected,
-                "repetition": repetition_detected,
-                "continuity": amp_data["amplitude_sustained"],
-                "match": phoneme_match,
-                "transcript": full_text,  # What Google STT heard
-                "match_status": "verified" if phoneme_match is True else ("rejected" if phoneme_match is False else "unverified")
-            },
-            "inferenceTimeMs": int((time.time() - t0) * 1000),
-        }
-        return jsonify(response_payload)
+        # 5. STANDARDIZED RESPONSE
+        elapsed_ms = int((time.time() - t0) * 1000)
+        return jsonify({
+            "success": True,
+            "data": {
+                "gamePass": is_pass,
+                "clinicalPass": clinical_pass,
+                "stars": stars,
+                "xp": xp,
+                "feedback": final_feedback,
+                "metrics": {
+                    "duration": amp_data["duration_sec"],
+                    "continuity": amp_data["amplitude_sustained"],
+                    "phonemeMatch": phoneme_match,
+                    "repetition": repetition_detected,
+                    "noiseDetected": blow_detected,
+                    "voicedRatio": voicing["pitched_ratio"],
+                },
+                "debug": {
+                    "stutterType": stutter_type,
+                    "confidence": round(composite_confidence, 2),
+                    "wavlmLabel": label,
+                    "sttTranscript": full_text,
+                    "inferenceTimeMs": elapsed_ms
+                }
+            }
+        })
 
     except Exception as e:
         print(f"Snake Analysis Error: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"success": False, "error": str(e), "code": "INTERNAL_ERROR"}), 500
 
     finally:
         if os.path.exists(filepath):

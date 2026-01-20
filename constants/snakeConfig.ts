@@ -13,11 +13,12 @@ export const SNAKE_CONFIG = {
   /**
    * Amplitude threshold for movement detection.
    * Movement halts when amplitude < AMPLITUDE_THRESHOLD for > SILENCE_GRACE_PERIOD.
+   * Raised to 0.55 (near NOISE_FLOOR) to ensure smooth speed ramp-up.
    * Range: [0.0, 1.0]
-   * Default: 0.1 (10% of max amplitude)
+   * Default: 0.55
    * Related: FR-004, FR-020
    */
-  AMPLITUDE_THRESHOLD: 0.1,
+  AMPLITUDE_THRESHOLD: 0.55,
 
   /**
    * Grace period before halting movement when amplitude drops below threshold.
@@ -41,12 +42,19 @@ export const SNAKE_CONFIG = {
    * Maximum snake speed cap (as multiplier of base speed).
    * Prevents loud volume from making the game too easy.
    * Base speed = pathLength / targetDuration
-   * Effective speed = min(v_max, baseSpeed * f(amplitude))
+   * Effective speed = min(v_max, baseSpeed * f(amplitude) * SPEED_BOOST)
    * Range: [1.0, Infinity]
-  * Default: 0.7 (70% of base speed for more controlled movement)
+   * Default: 0.6 (60% of base speed, targets ~5 second completion at max volume)
    * Related: FR-003, FR-019
    */
-  V_MAX: 0.7,
+  V_MAX: 0.6,
+
+  /**
+   * Speed boost factor.
+   * The calculated speed is baseSpeed * amplitude(0-1) * SPEED_BOOST.
+   * With high NOISE_FLOOR (0.6), this allows controlled speed ramping.
+   */
+  SPEED_BOOST: 1.0,
 
   /**
    * Target frame rate for game loop and visualizer updates.
@@ -65,9 +73,10 @@ export const SNAKE_CONFIG = {
   /**
    * Minimum continuous voicing duration before snake moves (seconds).
    * Prevents "cheating" by rapid taps; user must sustain sound briefly.
+   * Also helps reject ambient noise spikes in noisy environments.
    * Related: Risk Mitigation, Edge Cases
    */
-  MIN_CONTINUOUS_DURATION: 0.15,
+  MIN_CONTINUOUS_DURATION: 0.3,
 
   /**
    * Maximum allowed pause duration when allowPauses=true (seconds).
@@ -80,12 +89,13 @@ export const SNAKE_CONFIG = {
    * Timeout multiplier: level fails if not completed within (targetDuration * TIMEOUT_MULTIPLIER).
    * Related: Edge Cases
    */
-  TIMEOUT_MULTIPLIER: 2.0,
+  TIMEOUT_MULTIPLIER: 1.0,
 
   /**
    * Noise floor used to gate background hum; amplitudes below this are treated as 0
+   * Restored to 0.6 (~ -64dB) to properly block classroom ambient noise.
    */
-  NOISE_FLOOR: 0.7,
+  NOISE_FLOOR: 0.6,
 
   /**
    * Smoothing factor for amplitude low-pass filter (0..1, higher = more weight on new sample)
@@ -96,14 +106,15 @@ export const SNAKE_CONFIG = {
    * Hysteresis thresholds for voicing detection
    * - Movement only allowed when smoothed amplitude rises above VOICING_ON_THRESHOLD
    * - Movement stops when smoothed amplitude falls below VOICING_OFF_THRESHOLD
-   * Helps avoid flicker from borderline inputs and enforces stronger starts with quicker stops.
+   * Adjusted for high noise floor 0.6
    */
-  VOICING_ON_THRESHOLD: 0.12,
-  VOICING_OFF_THRESHOLD: 0.08,
+  VOICING_ON_THRESHOLD: 0.62,
+  VOICING_OFF_THRESHOLD: 0.58,
   /**
    * Minimum sustained time above VOICING_ON_THRESHOLD required to wake the snake (seconds)
+   * Increased to better distinguish sustained speech from brief ambient noise
    */
-  WAKE_LOCK_DURATION: 0.1,
+  WAKE_LOCK_DURATION: 0.25,
 
   /**
    * Raw off hold: if raw (unsmoothed) amplitude falls at/below NOISE_FLOOR
@@ -167,6 +178,9 @@ export function calculateSnakeSpeed(
 ): number {
   const baseSpeed = pathLength / targetDuration;
   const speedMultiplier = amplitudeToSpeedMultiplier(amplitude);
-  const uncappedSpeed = baseSpeed * speedMultiplier;
+  // Apply SPEED_BOOST so we can exceed baseSpeed at normal volume
+  // @ts-ignore - SPEED_BOOST added to config locally
+  const boost = SNAKE_CONFIG.SPEED_BOOST || 1.8; 
+  const uncappedSpeed = baseSpeed * speedMultiplier * boost;
   return Math.min(uncappedSpeed, baseSpeed * SNAKE_CONFIG.V_MAX);
 }

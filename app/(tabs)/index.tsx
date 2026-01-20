@@ -1,72 +1,20 @@
+import { GAMES, GameConfig } from '@/constants/games';
 import { getUserStats, type UserStats } from '@/services/statsService';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useFocusEffect, useNavigation } from 'expo-router';
+import { Link, router, useFocusEffect, useNavigation } from 'expo-router';
 import React, { useCallback, useLayoutEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
-interface ExerciseTile {
-  id: string;
-  title: string;
-  description: string;
-  icon: string;
-  color: string;
-  route: string;
-}
-
-const exercises: ExerciseTile[] = [
-  {
-    id: 'turtle',
-    title: 'Turtle (Slow & Steady)',
-    description: 'Practice slow, controlled speech',
-    icon: 'tortoise',
-    color: '#FF6B6B',
-    route: '/exercises/turtle-game',
-  },
-  {
-    id: 'snake',
-    title: 'Snake (Smooth Sound)',
-    description: 'Sustain your sound smoothly without repetition',
-    icon: 'snake',
-    color: '#1DD1A1',
-    route: '/exercises/snake-game',
-  },
-  {
-    id: 'onetap',
-    title: 'One-Tap (Impulse Control)',
-    description: 'Say it once, say it right!',
-    icon: 'owl',
-    color: '#8E44AD',
-    route: '/exercises/onetap-game',
-  },
-  {
-    id: 'balloon',
-    title: 'Balloon (Easy Onset)',
-    description: 'Blow gently and watch it grow!',
-    icon: 'water-percent',
-    color: '#3498DB',
-    route: '/exercises/balloon-game',
-  },
-  {
-    id: 'word-games',
-    title: 'Word Games',
-    description: 'Fun word puzzles and games',
-    icon: 'cards-variant',
-    color: '#FECA57',
-    route: '/exercises/word-games',
-  },
-  {
-    id: 'breathing',
-    title: 'Breathing Exercises',
-    description: 'Improve your breath control',
-    icon: 'lungs',
-    color: '#54A0FF',
-    route: '/exercises/breathing-exercises',
-  },
-];
+import { FlatList, TouchableOpacity, View, Text } from 'react-native';
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
+import { GameCard } from '@/components/ui/GameCard';
+import { H1, P } from '@/components/ui/Typography';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
   const [stats, setStats] = useState<UserStats | null>(null);
+  const colorScheme = useColorScheme();
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -90,197 +38,97 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const handleExercisePress = (route: string) => {
-    router.push(route as any);
-  };
+  const renderGameItem = ({ item, index }: { item: GameConfig; index: number }) => (
+    <View className="flex-1 py-2">
+      <Link href={item.route as any} asChild>
+        <GameCard
+            title={item.title}
+            description={item.description}
+            iconSource={item.iconSource}
+            iconName={item.iconName as any}
+            lottieSource={item.lottieSource}
+            delay={index * 100}
+            gradientColors={item.gradientColors}
+            darkGradientColors={item.darkGradientColors}
+            className="h-full"
+            onPress={() => {}} // dummy prop to satisfy types if needed, Link overrides it
+        />
+      </Link>
+    </View>
+  );
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.greeting}>Welcome Back! 👋</Text>
-        <Text style={styles.subtitle}>Choose an exercise to get started</Text>
-        <TouchableOpacity style={styles.demoLink} onPress={() => router.push('/demo')}>
-          <MaterialCommunityIcons name="flask" size={18} color="#10B981" />
-          <Text style={styles.demoText}>Open Stutter Detection Demo</Text>
+  const renderHeader = () => (
+    <View className="mb-6 mt-4">
+      <View className="pt-2 pb-6">
+        <H1 className="mb-2">Welcome Back! 👋</H1>
+        <P>Choose an exercise to get started today.</P>
+        
+        <TouchableOpacity 
+            className="mt-4 flex-row items-center space-x-2 rounded-xl bg-teal-50 px-4 py-3 dark:bg-teal-900/30 self-start"
+            onPress={() => router.push('/demo')}
+        >
+          <MaterialCommunityIcons name="flask" size={20} color="#0D9488" />
+          <Text className="font-semibold text-brand-primary">Open Stutter Detection Demo</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        bounces
+      {/* Stats Section */}
+      <Animated.View 
+        entering={FadeInDown.delay(200)} 
+        className="flex-row gap-3"
       >
-        <View style={styles.tilesContainer}>
-          {exercises.map((exercise) => (
-            <TouchableOpacity
-              key={exercise.id}
-              style={styles.tile}
-              onPress={() => handleExercisePress(exercise.route)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.iconContainer, { backgroundColor: exercise.color }]}>
-                <MaterialCommunityIcons
-                  name={exercise.icon as any}
-                  size={40}
-                  color="#fff"
-                />
-              </View>
-              <Text style={styles.tileTitle}>{exercise.title}</Text>
-              <Text style={styles.tileDescription}>{exercise.description}</Text>
-              <View style={styles.tileArrow}>
-                <MaterialCommunityIcons
-                  name="arrow-right"
-                  size={20}
-                  color={exercise.color}
-                />
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <MaterialCommunityIcons
-              name="calendar-today"
-              size={24}
-              color="#1a73e8"
-            />
-            <View style={styles.statContent}>
-              <Text style={styles.statLabel}>Sessions This Week</Text>
-              <Text style={styles.statValue}>{stats ? stats.sessionsThisWeek : '-'}</Text>
+        <LinearGradient
+            colors={colorScheme === 'dark' ? ['#1e3a8a', '#172554'] : ['#60a5fa', '#3b82f6']} // Blue-400->600 (Light), Blue-900->950 (Dark)
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            className="flex-1 flex-row items-center p-4 shadow-sm"
+            style={{ borderRadius: 16 }}
+        >
+            <View className="bg-white/20 p-2 rounded-full mr-3">
+                <MaterialCommunityIcons name="calendar-today" size={20} color="#FFFFFF" />
             </View>
-          </View>
-
-          <View style={styles.statCard}>
-            <MaterialCommunityIcons
-              name="star"
-              size={24}
-              color="#FFD93D"
-            />
-            <View style={styles.statContent}>
-              <Text style={styles.statLabel}>Current Streak</Text>
-              <Text style={styles.statValue}>{stats ? stats.currentStreak : '-'} days</Text>
+            <View>
+                <Text className="text-xs text-blue-50 uppercase font-medium">Sessions</Text>
+                <Text className="text-xl font-bold text-white">
+                    {stats ? stats.sessionsThisWeek : '-'}
+                </Text>
             </View>
-          </View>
-        </View>
+        </LinearGradient>
 
-       
-      </ScrollView>
+        <LinearGradient
+            colors={colorScheme === 'dark' ? ['#78350f', '#451a03'] : ['#fbbf24', '#d97706']} // Amber-400->600 (Light), Amber-900->950 (Dark)
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            className="flex-1 flex-row items-center p-4 shadow-sm"
+            style={{ borderRadius: 16 }}
+        >
+            <View className="bg-white/20 p-2 rounded-full mr-3">
+                <MaterialCommunityIcons name="star" size={20} color="#FFFFFF" />
+            </View>
+            <View>
+                <Text className="text-xs text-amber-50 uppercase font-medium">Streak</Text>
+                <Text className="text-xl font-bold text-white">
+                    {stats ? stats.currentStreak : '-'} <Text className="text-xs font-normal text-white/80">days</Text>
+                </Text>
+            </View>
+        </LinearGradient>
+      </Animated.View>
     </View>
   );
-}
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  header: {
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 24,
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
-  greeting: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1a73e8',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    fontWeight: '500',
-  },
-  demoLink: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  demoText: {
-    color: '#10B981',
-    fontWeight: '700',
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 24,
-  },
-  tilesContainer: {
-    gap: 16,
-    marginBottom: 32,
-  },
-  tile: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  tileTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 8,
-  },
-  tileDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  tileArrow: {
-    alignItems: 'flex-end',
-  },
-  statsContainer: {
-    gap: 12,
-  },
-  statCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  statContent: {
-    marginLeft: 16,
-    flex: 1,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-});
+  return (
+    <ScreenWrapper 
+        gradientColors={colorScheme === 'dark' ? ['#0f172a', '#020617'] : ['#f8fafc', '#e2e8f0']} // Slate-50->200 (Light), Slate-900->950 (Dark)
+    >
+      <FlatList
+        data={GAMES}
+        renderItem={renderGameItem}
+        keyExtractor={(item) => item.id}
+        numColumns={1}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        ListHeaderComponent={renderHeader}
+        showsVerticalScrollIndicator={false}
+      />
+    </ScreenWrapper>
+  );
+}

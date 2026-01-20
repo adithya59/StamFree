@@ -1,18 +1,19 @@
 import { auth } from '@/config/firebaseConfig';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
+import { H1, P } from '@/components/ui/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Link, router } from 'expo-router';
+import { router } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -20,7 +21,6 @@ import {
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -61,118 +61,69 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.content}>
-          <Text style={styles.title}>StamFree</Text>
-          <Text style={styles.subtitle}>Login to your account</Text>
+    <ScreenWrapper className="pt-0">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        className="flex-1"
+      >
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          <View className="pt-12 pb-8 items-center">
+             <View 
+               className="bg-teal-500/10 rounded-full items-center justify-center mb-6"
+               style={{ width: 96, height: 96, borderRadius: 48 }}
+             >
+                <Ionicons name="sparkles" size={48} color="#0D9488" />
+             </View>
+            <H1 className="text-center text-slate-800 dark:text-white text-4xl">StamFree</H1>
+            <P className="text-center mt-3 text-slate-600 dark:text-slate-300 text-base">Welcome back! 👋</P>
+          </View>
 
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your email"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-            </View>
+          <View className="bg-white/90 dark:bg-slate-900/90 rounded-[40px] px-8 pt-8 pb-10 shadow-2xl mb-6 border-2 border-white/50 dark:border-slate-800/50">
+            <Input
+              label="Email"
+              iconName="email"
+              placeholder="Enter your email"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              editable={!loading}
+            />
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.passwordContainer}>
-                <TextInput
-                  style={styles.passwordInput}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  style={styles.eyeIcon}
-                >
-                  <Ionicons
-                    name={showPassword ? 'eye' : 'eye-off'}
-                    size={22}
-                    color="#666"
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
+            <Input
+              label="Password"
+              iconName="lock"
+              placeholder="Enter your password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              editable={!loading}
+            />
 
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleLogin}
-              disabled={loading}
-            >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.forgotPasswordButton}
+              className="items-end mt-2 mb-6"
               onPress={() => router.push('/(auth)/password-reset')}
             >
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              <Text className="text-teal-600 dark:text-teal-400 font-bold text-sm">Forgot Password?</Text>
             </TouchableOpacity>
 
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Don't have an account? </Text>
-              <Link href="/(auth)/signup" asChild>
-                <TouchableOpacity>
-                  <Text style={styles.link}>Create Account</Text>
-                </TouchableOpacity>
-              </Link>
+            <Button
+              title="Login"
+              onPress={handleLogin}
+              loading={loading}
+              disabled={loading}
+              className="w-full"
+            />
+
+            <View className="flex-row justify-center mt-6">
+              <Text className="text-slate-500 dark:text-slate-400">Don't have an account? </Text>
+              <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
+                <Text className="text-teal-600 dark:text-teal-400 font-bold">Create Account</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ScreenWrapper>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  scrollContainer: { flexGrow: 1 },
-  content: { flex: 1, padding: 24, justifyContent: 'center' },
-  title: { fontSize: 32, fontWeight: 'bold', color: '#1a73e8', textAlign: 'center' },
-  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 40 },
-  form: { width: '100%' },
-  inputContainer: { marginBottom: 20 },
-  label: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#f9f9f9',
-  },
-  passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
-  },
-  passwordInput: { flex: 1, padding: 12 },
-  eyeIcon: { paddingHorizontal: 12 },
-  button: {
-    backgroundColor: '#1a73e8',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  forgotPasswordButton: { alignItems: 'center', marginTop: 12 },
-  forgotPasswordText: { color: '#1a73e8' },
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
-  footerText: { color: '#666' },
-  link: { color: '#1a73e8', fontWeight: '600' },
-});

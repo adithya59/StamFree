@@ -5,7 +5,12 @@ import { router } from 'expo-router';
 import { deleteUser, signOut } from 'firebase/auth';
 import { deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, TouchableOpacity, View, Text, ScrollView } from 'react-native';
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
+import { H1, H2, Label, P } from '@/components/ui/Typography';
+import { Button } from '@/components/ui/Button';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const avatarMap: Record<string, any> = {
   bear: require('@/assets/profilepictures/bear.png'),
@@ -18,63 +23,90 @@ const avatarMap: Record<string, any> = {
   tiger: require('@/assets/profilepictures/tiger.png'),
 };
 
+const avatarThemes: Record<string, { light: [string, string, ...string[]]; dark: [string, string, ...string[]] }> = {
+  bear: { light: ['#d97706', '#b45309'], dark: ['#78350f', '#451a03'] },      // Amber
+  crab: { light: ['#ef4444', '#b91c1c'], dark: ['#991b1b', '#7f1d1d'] },      // Red
+  dog: { light: ['#eab308', '#ca8a04'], dark: ['#854d0e', '#713f12'] },       // Yellow/Brown
+  giraffe: { light: ['#f59e0b', '#d97706'], dark: ['#b45309', '#78350f'] },   // Orange
+  hippo: { light: ['#6366f1', '#4f46e5'], dark: ['#4338ca', '#312e81'] },     // Indigo
+  lion: { light: ['#f97316', '#ea580c'], dark: ['#c2410c', '#9a3412'] },      // Orange/Red
+  rabbit: { light: ['#ec4899', '#db2777'], dark: ['#be185d', '#9d174d'] },    // Pink
+  tiger: { light: ['#f97316', '#c2410c'], dark: ['#9a3412', '#7c2d12'] },     // Deep Orange
+  default: { light: ['#a78bfa', '#7c3aed'], dark: ['#4c1d95', '#2e1065'] },   // Purple defaults
+};
+
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const colorScheme = useColorScheme();
+
+  const activeTheme = profile?.avatarId && avatarThemes[profile.avatarId] 
+    ? avatarThemes[profile.avatarId] 
+    : avatarThemes.default;
+
+  const gradientColors = colorScheme === 'dark' ? activeTheme.dark : activeTheme.light;
 
   const handleLogout = useCallback(async () => {
-    try {
-      await signOut(auth);
-      await AsyncStorage.removeItem('authUser');
-    } catch (e) {
-      console.warn('Failed to clear storage or sign out', e);
-    } finally {
-      router.replace('/(auth)/login');
-    }
-  }, []);
-
-  const handleDeleteAccount = useCallback(() => {
-  Alert.alert(
-    'Delete Account',
-    'This will permanently delete your account and all data. This action cannot be undone.',
-    [
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Delete',
+        text: 'Logout',
         style: 'destructive',
         onPress: async () => {
           try {
-            const user = auth.currentUser;
-            if (!user) return;
-
-            // Delete Firestore user data
-            await deleteDoc(doc(db, 'users', user.uid));
-
-            // Delete Auth account
-            await deleteUser(user);
-
-            // Clear local storage
+            await signOut(auth);
             await AsyncStorage.removeItem('authUser');
-
-            // Redirect
+          } catch (e) {
+            console.warn('Failed to clear storage or sign out', e);
+          } finally {
             router.replace('/(auth)/login');
-          } catch (error) {
-            Alert.alert(
-              'Error',
-              'Please login again and retry deleting your account.'
-            );
           }
         },
       },
-    ]
-  );
-}, []);
+    ]);
+  }, []);
+
+  const handleDeleteAccount = useCallback(() => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const user = auth.currentUser;
+              if (!user) return;
+
+              // Delete Firestore user data
+              await deleteDoc(doc(db, 'users', user.uid));
+
+              // Delete Auth account
+              await deleteUser(user);
+
+              // Clear local storage
+              await AsyncStorage.removeItem('authUser');
+
+              // Redirect
+              router.replace('/(auth)/login');
+            } catch (error) {
+              Alert.alert(
+                'Error',
+                'Please login again and retry deleting your account.'
+              );
+            }
+          },
+        },
+      ]
+    );
+  }, []);
 
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
 
-    // Use onSnapshot for real-time updates and caching
     const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (doc) => {
       if (doc.exists()) {
         setProfile(doc.data());
@@ -88,200 +120,104 @@ export default function ProfileScreen() {
     return () => unsubscribe();
   }, []);
 
-
   if (loading) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#1a73e8" />
-      </View>
+      <ScreenWrapper className="justify-center items-center">
+        <ActivityIndicator size="large" color="#0D9488" />
+      </ScreenWrapper>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.profileIcon}>
-          {profile?.avatarId && (
-            <Image
-              source={avatarMap[profile.avatarId]}
-              style={{ width: 105, height: 85, resizeMode: 'contain' }}
-            />
-          )}
-        </View>
-        <Text style={styles.profileName}>{profile?.childName}</Text>
-        <Text style={styles.profileEmail}>Manage account settings</Text>
-      </View>
-
-      <View style={styles.settingsContainer}>
-        <View style={styles.settingCard}>
-          <Text style={styles.settingLabel}>Child's Name</Text>
-          <Text style={styles.settingValue}>{profile?.childName}</Text>
-        </View>
-
-        <View style={styles.settingCard}>
-          <Text style={styles.settingLabel}>Age</Text>
-          <Text style={styles.settingValue}>{profile?.childAge} years</Text>
-        </View>
-
-        <View style={styles.settingCard}>
-          <Text style={styles.settingLabel}>Speech Focus</Text>
-          <Text style={styles.settingValue}>
-            {profile?.speechIssues?.join(', ') || 'Not specified'}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.actionContainer}>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => router.push('/editprofile')}
-        >
-          <MaterialCommunityIcons name="pencil" size={20} color="#1a73e8" />
-          <Text style={styles.editButtonText}>Edit Profile</Text>
-        </TouchableOpacity>
+    <ScreenWrapper 
+        gradientColors={colorScheme === 'dark' ? ['#0f172a', '#020617'] : ['#f8fafc', '#e2e8f0']}
+    >
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 160, paddingTop: 20 }}>
         
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={handleDeleteAccount}
+        {/* Profile Header Card */}
+        <LinearGradient
+            colors={gradientColors} 
+            className="rounded-3xl p-6 mb-8 shadow-lg items-center relative overflow-hidden"
+            style={{ borderRadius: 24 }}
         >
-          <MaterialCommunityIcons name="delete" size={20} color="#fff" />
-          <Text style={styles.deleteButtonText}>Delete Account</Text>
-        </TouchableOpacity>
+            <TouchableOpacity 
+                className="absolute top-5 right-5 bg-white/20 p-2 rounded-full z-10 active:bg-white/30"
+                onPress={handleLogout}
+            >
+                <MaterialCommunityIcons name="logout" size={20} color="white" />
+            </TouchableOpacity>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <MaterialCommunityIcons name="logout" size={20} color="#fff" />
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+            <View className="mb-4">
+                <Image
+                    source={avatarThemes[profile?.avatarId] ? avatarMap[profile?.avatarId] : avatarMap['bear']}
+                    className="w-28 h-28"
+                    resizeMode="contain"
+                />
+            </View>
+
+            <H1 className="text-white text-center mb-1 drop-shadow-sm">{profile?.childName || 'StamFree Hero'}</H1>
+        </LinearGradient>
+
+        <View className="gap-3 mb-6 px-2">
+            <View className="flex-row items-center bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                <View className="bg-purple-100 dark:bg-purple-900/30 p-3 rounded-full mr-4">
+                     <MaterialCommunityIcons name="cake-variant" size={24} color="#9333ea" />
+                </View>
+                <View>
+                    <Label className="text-slate-400 dark:text-slate-500 text-xs uppercase font-medium mb-0.5">Age</Label>
+                    <Text className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                        {profile?.childAge || '-'} <Text className="text-sm font-medium text-slate-400">years old</Text>
+                    </Text>
+                </View>
+            </View>
+
+            <View className="flex-row items-center bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                <View className="bg-blue-100 dark:bg-blue-900/30 p-3 rounded-full mr-4">
+                     <MaterialCommunityIcons name="bullseye-arrow" size={24} color="#2563eb" />
+                </View>
+                <View className="flex-1">
+                    <Label className="text-slate-400 dark:text-slate-500 text-xs uppercase font-medium mb-0.5">Speech Focus</Label>
+                    <Text className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                        {profile?.speechIssues?.length > 0 
+                            ? profile.speechIssues.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1)).join(', ') 
+                            : 'General Practice'}
+                    </Text>
+                </View>
+            </View>
+        </View>
+
+        <View className="space-y-4 px-2">
+            <Label className="ml-1 mb-2">Account Settings</Label>
+            
+            <TouchableOpacity
+                className="flex-row items-center bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm"
+                onPress={() => router.push('/editprofile')}
+            >
+                <View className="bg-teal-100 dark:bg-teal-900/40 p-2 rounded-full mr-4">
+                    <MaterialCommunityIcons name="account-edit" size={22} color="#0d9488" />
+                </View>
+                <View className="flex-1">
+                    <Text className="text-base font-semibold text-slate-800 dark:text-slate-100">Edit Profile</Text>
+                    <Text className="text-xs text-slate-500">Update name, avatar, and age</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={24} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                className="flex-row items-center bg-red-50 dark:bg-red-900/10 p-4 rounded-2xl border border-red-100 dark:border-red-900/30 shadow-sm mt-4"
+                onPress={handleDeleteAccount}
+            >
+                <View className="bg-red-100 dark:bg-red-900/30 p-2 rounded-full mr-4">
+                    <MaterialCommunityIcons name="delete-outline" size={22} color="#ef4444" />
+                </View>
+                <View className="flex-1">
+                    <Text className="text-base font-semibold text-red-600 dark:text-red-400">Delete Account</Text>
+                    <Text className="text-xs text-red-400/80">Permanently remove all data</Text>
+                </View>
+            </TouchableOpacity>
+        </View>
+
+      </ScrollView>
+    </ScreenWrapper>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  header: {
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 32,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
-  profileIcon: {
-    marginBottom: 16,
-  },
-  profileName: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1F2937',
-    marginBottom: 4,
-  },
-  profileEmail: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  settingsContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-    gap: 12,
-  },
-  settingCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  settingLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  settingValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  actionContainer: {
-    paddingHorizontal: 16,
-    gap: 12,
-    marginBottom: 24,
-  },
-  editButton: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#1a73e8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F0F9FF',
-  },
-  editButtonText: {
-    color: '#1a73e8',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 10,
-    backgroundColor: '#EF4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-  },
-  logoutButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  infoCard: {
-    marginHorizontal: 16,
-    backgroundColor: '#F0F9FF',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0369A1',
-    marginBottom: 12,
-  },
-  infoText: {
-    fontSize: 13,
-    color: '#0369A1',
-    marginBottom: 6,
-    lineHeight: 18,
-  },
-  deleteButton: {
-  flexDirection: 'row',
-  paddingVertical: 12,
-  paddingHorizontal: 24,
-  borderRadius: 10,
-  backgroundColor: '#991B1B',
-  justifyContent: 'center',
-  alignItems: 'center',
-  gap: 8,
-},
-deleteButtonText: {
-  color: '#fff',
-  fontSize: 16,
-  fontWeight: '700',
-},
-});

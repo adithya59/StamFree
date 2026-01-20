@@ -11,6 +11,11 @@ import { RetryModal } from '@/components/snake/RetryModal';
 import { SnakeGameEngine } from '@/components/snake/SnakeGameEngine';
 import { SnakePath } from '@/components/snake/SnakePath';
 import { SuccessModal } from '@/components/snake/SuccessModal';
+import { SnakeProgressModal } from '@/components/snake/SnakeProgressModal';
+// Design System
+import { Button } from '@/components/ui/Button';
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
+import { H1, H2, P } from '@/components/ui/Typography';
 import { SNAKE_CONFIG } from '@/constants/snakeConfig';
 import type { GameMetrics } from '@/hooks/useSnakeGame';
 import { useSnakeSession } from '@/hooks/useSnakeSession';
@@ -21,65 +26,11 @@ import * as Haptics from 'expo-haptics';
 import { router, useNavigation } from 'expo-router';
 import * as Speech from 'expo-speech';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, BackHandler, Easing, ImageBackground, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Animated, BackHandler, Easing, ImageBackground, Linking, Platform, Text, TouchableOpacity, View } from 'react-native';
+import { auth, db } from '@/config/firebaseConfig';
+import { collection, doc, getDocs, onSnapshot } from 'firebase/firestore';
 
 const backgroundImage = require('@/assets/images/jungle-background.png');
-
-type PressableScaleButtonProps = React.PropsWithChildren<{ 
-  disabled?: boolean;
-  onPress?: () => void | Promise<void>;
-  style?: any;
-  testID?: string;
-  accessibilityLabel?: string;
-}>;
-
-const PressableScaleButton: React.FC<PressableScaleButtonProps> = ({ 
-  disabled,
-  onPress,
-  style,
-  children,
-  testID,
-  accessibilityLabel,
-}) => {
-  const scale = React.useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = useCallback(() => {
-    if (disabled) return;
-    Animated.spring(scale, {
-      toValue: 0.96,
-      speed: 18,
-      bounciness: 8,
-      useNativeDriver: true,
-    }).start();
-  }, [disabled, scale]);
-
-  const handlePressOut = useCallback(() => {
-    Animated.spring(scale, {
-      toValue: 1,
-      speed: 18,
-      bounciness: 8,
-      useNativeDriver: true,
-    }).start();
-  }, [scale]);
-
-  return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onPress={onPress}
-        disabled={disabled}
-        style={style}
-        testID={testID}
-        accessibilityLabel={accessibilityLabel}
-      >
-        {children}
-      </TouchableOpacity>
-    </Animated.View>
-  );
-};
 
 const useHaptics = () => {
   const light = useCallback(() => {
@@ -141,9 +92,63 @@ export default function SnakeGameScreen() {
   const pathSeedRef = React.useRef<number>(0);
   const [pathSeed, setPathSeed] = useState<number>(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [activePhonemeCount, setActivePhonemeCount] = useState<number>(0);
+  const [masteredPhonemeCount, setMasteredPhonemeCount] = useState<number>(0);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [activePhonemes, setActivePhonemes] = useState<any[]>([]);
+  const [masteredPhonemes, setMasteredPhonemes] = useState<any[]>([]);
+  const [lockedPhonemes, setLockedPhonemes] = useState<any[]>([]);
+  const [phonemeStats, setPhonemeStats] = useState<Record<string, { attempts: number; successCount: number }>>({});
+  const [phonemePool, setPhonemePool] = useState<Record<string, any>>({});
 
   // Determine voicing requirement based on category/tier
   const isVoicedTarget = sessionConfig ? (sessionConfig.tier === 1 || sessionConfig.tier === 2) : false;
+  
+  // Subscribe to user playlist for progress stats
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    // Fetch phoneme pool first
+    const fetchPool = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'snake_phoneme_pool'));
+        const pool: Record<string, any> = {};
+        snap.forEach((d) => {
+          pool[d.id] = { id: d.id, ...d.data() };
+        });
+        setPhonemePool(pool);
+      } catch (e) {
+        console.error('[SnakeGame] Error fetching phoneme pool:', e);
+      }
+    };
+    
+    fetchPool();
+    
+    const playlistRef = doc(db, `users/${user.uid}/snake_progress/playlist`);
+    const unsubscribe = onSnapshot(playlistRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setActivePhonemeCount(data.activePhonemes?.length || 0);
+        setMasteredPhonemeCount(data.masteredPhonemes?.length || 0);
+        setPhonemeStats(data.phonemeStats || {});
+        
+        // Convert phoneme IDs to full phoneme objects
+        const activeIds = data.activePhonemes || [];
+        const masteredIds = data.masteredPhonemes || [];
+        const allIds = Object.keys(phonemePool);
+        const lockedIds = allIds.filter(id => !activeIds.includes(id) && !masteredIds.includes(id));
+        
+        setActivePhonemes(activeIds.map((id: string) => phonemePool[id]).filter((p: any) => p));
+        setMasteredPhonemes(masteredIds.map((id: string) => phonemePool[id]).filter((p: any) => p));
+        setLockedPhonemes(lockedIds.map((id: string) => phonemePool[id]).filter((p: any) => p));
+      }
+    }, (err) => {
+      console.error('[SnakeGame] Error listening to playlist:', err);
+    });
+    
+    return () => unsubscribe();
+  }, [phonemePool]);
   
   const speechProb = analysisResult?.aiResult?.confidence as number | undefined;
   const voicedDetected = analysisResult?.aiResult?.metrics?.voiced_detected as boolean | undefined;
@@ -227,7 +232,7 @@ export default function SnakeGameScreen() {
             setFinalStars(stars);
             
             // Set earned XP from backend (tier-based deduction logic)
-            const xp = analysisData.aiResult?.xp_earned ?? (stars === 3 ? 10 : (stars === 2 ? 7 : 4)); 
+            const xp = analysisData.aiResult?.xp ?? (stars === 3 ? 10 : (stars === 2 ? 7 : 4)); 
             setEarnedXp(xp);
 
             let feedback = analysisData.aiResult?.feedback ?? 'Great effort!';
@@ -399,9 +404,9 @@ export default function SnakeGameScreen() {
   }), [introAnim]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    <ScreenWrapper bgClass="bg-therapeutic-calm dark:bg-slate-950">
       {loading && (
-        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <View className="flex-1 justify-center items-center">
           <ActivityIndicator size="large" color="#1a73e8" />
         </View>
       )}
@@ -491,55 +496,49 @@ export default function SnakeGameScreen() {
               reset,
               hasPermission,
             }) => (
-              <View style={{ flex: 1, flexDirection: 'column' }}>
+              <View className="flex-1 flex-col">
                 <Animated.View 
-                  style={[styles.floatingHeader, headerEntranceStyle]} 
+                  style={[headerEntranceStyle]} 
+                  className="h-14 flex-row justify-between items-center px-3 pt-1 bg-transparent z-30"
                   pointerEvents="box-none"
                 >
-                  <PressableScaleButton
-                    style={styles.backButton}
+                  <TouchableOpacity
+                    className="w-12 h-12 rounded-full bg-white/95 dark:bg-slate-800/95 items-center justify-center border border-[#1a73e8]/30 dark:border-teal-500/30 shadow-sm active:opacity-80"
                     onPress={showSuccessModal ? handleCloseSuccessModal : handleBack}
                     accessibilityLabel="Back"
                   >
                     <MaterialCommunityIcons name="arrow-left" size={24} color="#1a73e8" />
-                  </PressableScaleButton>
+                  </TouchableOpacity>
 
                   {/* Level & Progress Pill (Top Center) */}
-                  <View style={styles.levelGroup}>
-                    <View style={styles.levelPill}>
-                      <Text style={styles.levelPillText}>
+                  <View className="flex-row items-center gap-2">
+                    <View className="bg-white/95 dark:bg-slate-800/95 rounded-2xl px-4 py-2 border border-[#1a73e8]/30 dark:border-teal-500/30 items-center shadow-sm">
+                      <Text className="text-sm font-bold text-[#1a73e8] dark:text-teal-400">
                         Sound: {sessionConfig.phoneme}
                       </Text>
-                      <Text style={styles.levelPillSubtext}>
+                      <Text className="text-xs text-slate-600 dark:text-slate-400 font-semibold">
                         Tier {sessionConfig.tier}
                       </Text>
                     </View>
                   </View>
 
-                  <PressableScaleButton
-                    style={styles.pauseButton}
-                    onPress={async () => {
-                      hapticLight();
-                      if (isPaused) {
-                        resume();
-                        handleResumePause();
-                      } else {
-                        pause();
-                        handlePause();
-                      }
-                    }}
-                    disabled={!isRunning || gameCompleted}
-                    accessibilityLabel={isPaused ? 'Resume' : 'Pause'}
+                  {/* Progress Stats (Top Right) - Now Clickable */}
+                  <TouchableOpacity 
+                    className="bg-white/95 dark:bg-slate-800/95 rounded-2xl px-3 py-2 border border-[#1a73e8]/30 dark:border-teal-500/30 shadow-sm active:opacity-80"
+                    onPress={() => setShowProgressModal(true)}
                   >
-                    <MaterialCommunityIcons
-                      name={isPaused ? 'play' : 'pause'}
-                      size={24}
-                      color="#FFFFFF"
-                    />
-                  </PressableScaleButton>
+                    <View className="flex-row items-center gap-2">
+                      <MaterialCommunityIcons name="bullseye-arrow" size={16} color="#F59E0B" />
+                      <Text className="text-xs font-bold text-amber-600 dark:text-amber-400">{activePhonemeCount}</Text>
+                    </View>
+                    <View className="flex-row items-center gap-2 mt-1">
+                      <MaterialCommunityIcons name="trophy" size={16} color="#059669" />
+                      <Text className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{masteredPhonemeCount}</Text>
+                    </View>
+                  </TouchableOpacity>
                 </Animated.View>
 
-                <Animated.View style={[styles.gameViewportCard, cardEntranceStyle]}>
+                <Animated.View style={[cardEntranceStyle]} className="flex-1 m-3 mt-2 bg-[#F7FAFF] dark:bg-slate-900 rounded-2xl overflow-hidden border border-[#1a73e8]/10 dark:border-teal-500/20 shadow-xl">
                   {(() => {
                     engineResetRef.current = reset;
                     return null;
@@ -547,7 +546,7 @@ export default function SnakeGameScreen() {
 
                   <ImageBackground
                     source={backgroundImage}
-                    style={styles.gameBackground}
+                    className="flex-1 w-full h-full"
                     resizeMode="cover"
                   >
                     <SnakePath
@@ -561,27 +560,50 @@ export default function SnakeGameScreen() {
                     />
                   </ImageBackground>
 
+                  {/* Pause Button Overlay - Visible during gameplay */}
+                  {gameStarted && isRunning && !gameCompleted && (
+                    <View className="absolute bottom-6 right-6 z-20" pointerEvents="box-none">
+                      <TouchableOpacity
+                        className="w-14 h-14 rounded-full bg-[#1a73e8]/95 dark:bg-teal-600/95 items-center justify-center shadow-xl active:opacity-80"
+                        onPress={async () => {
+                          hapticLight();
+                          if (isPaused) {
+                            resume();
+                            handleResumePause();
+                          } else {
+                            pause();
+                            handlePause();
+                          }
+                        }}
+                        disabled={!isRunning || gameCompleted}
+                        accessibilityLabel={isPaused ? 'Resume' : 'Pause'}
+                      >
+                        <MaterialCommunityIcons
+                          name={isPaused ? 'play' : 'pause'}
+                          size={28}
+                          color="#FFFFFF"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
                   {isPaused && isRunning && (
-                    <View style={styles.pausedTint} pointerEvents="none">
-                      <Text style={styles.pausedTintText}>Paused</Text>
+                    <View className="absolute inset-0 bg-slate-900/10 dark:bg-black/30 justify-center items-center" pointerEvents="none">
+                      <Text className="text-base font-bold text-slate-800 dark:text-slate-200">Paused</Text>
                     </View>
                   )}
 
                   {!gameStarted && !gameCompleted && (
-                    <View style={styles.promptOverlay}>
-                      <View style={styles.promptCard}>
-                        <Text style={styles.promptTitle}>Deep breath...</Text>
-                        <Text style={styles.promptPhoneme}>{sessionConfig.example}</Text>
-                        <Text style={styles.promptInstruction}>
+                    <View className="absolute inset-0 justify-center items-center bg-black/50">
+                      <View className="bg-white dark:bg-slate-800 rounded-2xl p-6 items-center max-w-[80%] shadow-xl">
+                        <Text className="text-lg font-semibold text-slate-600 dark:text-slate-300 mb-3">Say:</Text>
+                        <Text className="text-5xl font-bold text-[#1a73e8] dark:text-teal-400 mb-4">{sessionConfig.phoneme}</Text>
+                        <Text className="text-base text-slate-600 dark:text-slate-300 text-center mb-5">
                           {getInstructionText(sessionConfig.phoneme, sessionConfig.tier, sessionConfig.category)}
                         </Text>
-                        <View style={styles.promptButtonContainer}>
-                          <PressableScaleButton
-                            style={[
-                              styles.button, 
-                              styles.buttonPrimary, 
-                              (!hasPermission || isSpeaking) && styles.buttonDisabled
-                            ]}
+                        <View className="w-full items-center gap-2">
+                          <Button
+                            title={isSpeaking ? "Listen..." : "Start"}
                             onPress={async () => {
                               hapticLight();
                               Speech.stop();
@@ -590,19 +612,17 @@ export default function SnakeGameScreen() {
                               await start();
                             }}
                             disabled={!hasPermission || isSpeaking}
-                            accessibilityLabel="Start"
-                          >
-                            <MaterialCommunityIcons 
-                              name={isSpeaking ? "volume-high" : "play"} 
-                              size={32} 
-                              color="#FFFFFF" 
-                            />
-                            <Text style={styles.buttonPrimaryText}>
-                              {isSpeaking ? "Listen..." : "Start"}
-                            </Text>
-                          </PressableScaleButton>
+                            icon={
+                              <MaterialCommunityIcons 
+                                name={isSpeaking ? "volume-high" : "play"} 
+                                size={24} 
+                                color="#FFFFFF" 
+                              />
+                            }
+                            className="w-40 self-center"
+                          />
                           {!hasPermission && (
-                            <Text style={styles.permissionWarning}>
+                            <Text className="text-center text-rose-600 dark:text-rose-400 text-sm mt-2">
                               Microphone permission required
                             </Text>
                           )}
@@ -612,10 +632,10 @@ export default function SnakeGameScreen() {
                   )}
 
                   {gameState.showSleepOverlay && isRunning && (
-                    <View style={styles.sleepPromptOverlay}>
-                      <View style={styles.sleepPromptCard}>
-                        <Text style={styles.sleepPromptEmoji}>😴</Text>
-                        <Text style={styles.sleepPromptText}>
+                    <View className="absolute top-[26%] left-0 right-0 items-center">
+                      <View className="bg-white dark:bg-slate-800 rounded-xl py-2.5 px-3 items-center max-w-[55%] shadow-md">
+                        <Text className="text-2xl mb-1">😴</Text>
+                        <Text className="text-sm text-slate-600 dark:text-slate-300 text-center">
                           Wake up the snake! Keep saying {sessionConfig.phoneme}...
                         </Text>
                       </View>
@@ -623,54 +643,51 @@ export default function SnakeGameScreen() {
                   )}
 
                   {gameCompleted && finalMetrics && completionReason !== 'win' && (
-                    <View style={styles.completionOverlay}>
-                      <View style={styles.completionCard}>
-                        <Text style={styles.completionTitle}>
+                    <View className="absolute inset-0 justify-center items-center bg-black/60">
+                      <View className="bg-white dark:bg-slate-800 rounded-2xl p-6 items-center max-w-[85%] shadow-xl">
+                        <Text className="text-3xl font-bold text-slate-900 dark:text-slate-50 mb-5 text-center">
                           {finalMetrics.completionPercentage >= 100 ? '🎉 Well Done!' : '⏱️ Time\'s Up!'}
                         </Text>
-                        <Text style={styles.completionStats}>
+                        <Text className="text-base text-slate-600 dark:text-slate-300 mb-2">
                           Duration: {finalMetrics.durationAchieved.toFixed(1)}s / {finalMetrics.targetDuration}s
                         </Text>
-                        <Text style={styles.completionStats}>
+                        <Text className="text-base text-slate-600 dark:text-slate-300 mb-2">
                           Progress: {Math.round(finalMetrics.completionPercentage)}%
                         </Text>
                         {finalMetrics.pauseCount > 0 && (
-                          <Text style={styles.completionStats}>
+                          <Text className="text-base text-slate-600 dark:text-slate-300 mb-2">
                             Pauses: {finalMetrics.pauseCount} ({finalMetrics.totalPauseDuration.toFixed(1)}s)
                           </Text>
                         )}
                         
-                        <View style={styles.completionButtons}>
-                          <PressableScaleButton
-                            style={[styles.button, styles.buttonSecondary]}
+                        <View className="flex-row gap-3 mt-5">
+                          <Button
+                            title="Try Again"
+                            variant="outline"
                             onPress={() => {
                               hapticLight();
                               handleRetry();
                             }}
-                            accessibilityLabel="Try again"
-                          >
-                            <Text style={styles.buttonSecondaryText}>Try Again</Text>
-                          </PressableScaleButton>
-                          <PressableScaleButton
-                            style={[styles.button, styles.buttonPrimary]}
+                            className="flex-1"
+                          />
+                          <Button
+                            title="Done"
                             onPress={() => {
                               hapticLight();
                               router.back();
                             }}
-                            accessibilityLabel="Done"
-                          >
-                            <Text style={styles.buttonPrimaryText}>Done</Text>
-                          </PressableScaleButton>
+                            className="flex-1"
+                          />
                         </View>
                       </View>
                     </View>
                   )}
                 </Animated.View>
 
-                <Animated.View style={[styles.controlDeckCard, cardEntranceStyle]}>
-                  <View style={styles.sentenceCard}>
-                    <Text style={styles.sentenceLabel}>Say:</Text>
-                    <Text style={styles.sentenceText}>{sessionConfig.example}</Text>
+                <Animated.View style={[cardEntranceStyle]} className="bg-[#F9FBFF] dark:bg-slate-900 rounded-2xl m-3 mb-4 pb-4 border border-[#1a73e8]/10 dark:border-teal-500/20 shadow-xl relative">
+                  <View className="mx-4 mt-3 mb-2 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md">
+                    <Text className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Say:</Text>
+                    <Text className="text-base font-semibold text-slate-900 dark:text-slate-50 mb-1">{sessionConfig.example}</Text>
                   </View>
                 </Animated.View>
               </View>
@@ -678,455 +695,16 @@ export default function SnakeGameScreen() {
           </SnakeGameEngine>
         </>
       )}
-    </SafeAreaView>
+      
+      {/* Progress Modal */}
+      <SnakeProgressModal
+        visible={showProgressModal}
+        onClose={() => setShowProgressModal(false)}
+        activePhonemes={activePhonemes}
+        masteredPhonemes={masteredPhonemes}
+        lockedPhonemes={lockedPhonemes}
+        phonemeStats={phonemeStats}
+      />
+    </ScreenWrapper>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F0FFF0',
-    flexDirection: 'column',
-  },
-  floatingHeader: {
-    height: 56,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 4,
-    backgroundColor: 'transparent',
-    zIndex: 30,
-  },
-  pauseButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(26, 115, 232, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  backButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(26, 115, 232, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  levelPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(26, 115, 232, 0.3)',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  levelPillText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1a73e8',
-  },
-  levelPillSubtext: {
-    fontSize: 11,
-    color: '#4B5563',
-    fontWeight: '600',
-  },
-  levelGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pausedBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255, 193, 7, 0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 193, 7, 0.4)',
-  },
-  pausedBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#8a6d00',
-  },
-  gameViewportCard: {
-    flex: 1,
-    margin: 12,
-    marginTop: 8,
-    backgroundColor: '#F7FAFF',
-    borderRadius: 18,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(26, 115, 232, 0.08)',
-    shadowColor: '#0A2540',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  gameBackground: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  pausedTint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(12, 18, 28, 0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pausedTintText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-    letterSpacing: 0.5,
-  },
-  controlDeckCard: {
-    backgroundColor: '#F9FBFF',
-    borderRadius: 18,
-    margin: 12,
-    marginBottom: 16,
-    paddingBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(26, 115, 232, 0.08)',
-    shadowColor: '#0A2540',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 6,
-    position: 'relative',
-  },
-  gameContainer: {
-    flex: 1,
-  },
-  headerButton: {
-    padding: 8,
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  progressLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
-  },
-  progressPercentage: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a73e8',
-  },
-  hudContainer: {
-    ...StyleSheet.absoluteFillObject,
-    padding: 12,
-  },
-  hudBubble: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#D5E3FF',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-    maxWidth: 180,
-  },
-  hudLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1a73e8',
-  },
-  hudValue: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1F2937',
-    flexShrink: 1,
-  },
-  hudTopLeft: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-  },
-  hudTopRight: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    alignItems: 'flex-end',
-  },
-  promptOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  promptCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    maxWidth: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  promptTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666666',
-    marginBottom: 12,
-  },
-  promptPhoneme: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#1a73e8',
-    marginBottom: 16,
-  },
-  promptInstruction: {
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  promptButtonContainer: {
-    width: '100%',
-    alignItems: 'center',
-    gap: 8,
-  },
-  sleepPromptOverlay: {
-    position: 'absolute',
-    top: '26%',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  sleepPromptCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    maxWidth: '55%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  sleepPromptEmoji: {
-    fontSize: 24,
-    marginBottom: 4,
-  },
-  sleepPromptText: {
-    fontSize: 13,
-    color: '#666666',
-    textAlign: 'center',
-  },
-  completionOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  },
-  completionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    maxWidth: '85%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  completionTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333333',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  completionStats: {
-    fontSize: 16,
-    color: '#666666',
-    marginBottom: 8,
-  },
-  completionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  controlsContainer: {
-    padding: 16,
-    gap: 12,
-  },
-  gameControls: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    gap: 8,
-    minWidth: 120,
-  },
-  buttonLarge: {
-    paddingVertical: 16,
-    width: '100%',
-  },
-  buttonPrimary: {
-    backgroundColor: '#1a73e8',
-  },
-  buttonSecondary: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#1a73e8',
-    flex: 1,
-  },
-  buttonDanger: {
-    backgroundColor: '#DC3545',
-    flex: 1,
-  },
-  buttonDisabled: {
-    backgroundColor: '#CCCCCC',
-    opacity: 0.6,
-  },
-  buttonPrimaryText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonSecondaryText: {
-    color: '#1a73e8',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  permissionWarning: {
-    textAlign: 'center',
-    color: '#DC3545',
-    fontSize: 14,
-    marginTop: 8,
-  },
-  perfStats: {
-    marginTop: 8,
-    padding: 8,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 4,
-  },
-  perfStatsText: {
-    fontSize: 11,
-    color: '#666666',
-    fontFamily: 'monospace',
-  },
-  perfWarning: {
-    color: '#DC3545',
-    fontWeight: 'bold',
-  },
-  sentenceCard: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-    padding: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#0A2540',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  sentenceLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#6B7280',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
-  sentenceText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  sentencePhonemes: {
-    fontSize: 13,
-    color: '#4B5563',
-  },
-  visualizerContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 4,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  visualizerBar: {
-    width: 8,
-    borderRadius: 4,
-  },
-  visualizerBarIdle: {
-    backgroundColor: '#D1D5DB',
-  },
-  visualizerBarActive: {
-    backgroundColor: '#34D399',
-  },
-  readyToast: {
-    position: 'absolute',
-    top: 8,
-    alignSelf: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(26, 115, 232, 0.12)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(26, 115, 232, 0.25)',
-  },
-  readyToastText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1a73e8',
-    letterSpacing: 0.3,
-  },
-});
