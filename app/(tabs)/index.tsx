@@ -47,6 +47,14 @@ const exercises: ExerciseTile[] = [
     route: '/exercises/balloon-game',
   },
   {
+    id: 'tapping',
+    title: 'Rhythm Adventure',
+    description: 'Tap along with the syllables!',
+    icon: 'music-note',
+    color: '#FF9800',
+    route: '/exercises/tapping-game',
+  },
+  {
     id: 'word-games',
     title: 'Word Games',
     description: 'Fun word puzzles and games',
@@ -164,7 +172,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-       
+
       </ScrollView>
     </View>
   );
