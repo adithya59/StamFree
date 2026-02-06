@@ -12,6 +12,7 @@ export const BACKEND_ROUTES = {
   analyzeTurtle: `${BACKEND_BASE_URL}/analyze/turtle`,
   analyzeBalloon: `${BACKEND_BASE_URL}/analyze/balloon`,
   analyzeOneTap: `${BACKEND_BASE_URL}/analyze/onetap`,
+  analyzeTapping: `${BACKEND_BASE_URL}/analyze/tapping`,
   analyzeAudio: `${BACKEND_BASE_URL}/analyze_audio`,
 } as const;
 
@@ -19,7 +20,7 @@ export function getHealthUrl() {
   return BACKEND_ROUTES.health;
 }
 
-export function getAnalyzeUrl(kind: 'turtle' | 'snake' | 'balloon' | 'onetap') {
+export function getAnalyzeUrl(kind: 'turtle' | 'snake' | 'balloon' | 'onetap' | 'tapping') {
   switch (kind) {
     case 'snake':
       return BACKEND_ROUTES.analyzeSnake;
@@ -29,6 +30,8 @@ export function getAnalyzeUrl(kind: 'turtle' | 'snake' | 'balloon' | 'onetap') {
       return BACKEND_ROUTES.analyzeBalloon;
     case 'onetap':
       return BACKEND_ROUTES.analyzeOneTap;
+    case 'tapping':
+      return BACKEND_ROUTES.analyzeTapping;
     default:
       return `${BACKEND_BASE_URL}/analyze/${kind}`;
   }

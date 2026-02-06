@@ -702,6 +702,132 @@ def analyze_balloon():
                 pass
 
 
+@app.route("/analyze/tapping", methods=["POST"])
+def analyze_tapping():
+    """
+    Syllable Tapping Analysis (Rhythm & Content Verification)
+    """
+    if "audio" not in request.files:
+        return jsonify({"error": "No audio file"}), 400
+
+    file = request.files["audio"]
+    target_word = request.form.get("targetWord", "").strip().lower()
+    syllables_json = request.form.get("syllables", "[]")
+    taps_json = request.form.get("taps", "[]")
+    
+    import json
+    try:
+        syllables = json.loads(syllables_json)
+        taps = json.loads(taps_json)
+    except:
+        syllables = []
+        taps = []
+
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(os.getcwd(), filename)
+    file.save(filepath)
+
+    try:
+        t0 = time.time()
+        
+        # 1. Google STT + Phonetic Verification
+        transcript = ""
+        stt_confidence = 0.0
+        syllable_matches = [False] * len(syllables)
+        
+        try:
+            transcript, words_data = get_google_transcript(filepath)
+            
+            # --- PHONEME MATCHING LOGIC ---
+            # 1. Convert Transcript to Phonemes (clean numbers/stress)
+            # Remove stress digits (0,1,2)
+            trans_phonemes_raw = g2p(transcript)
+            trans_phonemes = [p for p in trans_phonemes_raw if p not in [" ", "'"]]
+            trans_phonemes = ["".join([c for c in p if not c.isdigit()]) for p in trans_phonemes]
+            
+            print(f"DEBUG: Transcript Phonemes: {trans_phonemes}")
+            
+            # 2. Sequential Sub-sequence Search
+            current_idx = 0
+            for i, syl in enumerate(syllables):
+                try:
+                    # --- TEXT-BASED MATCHING (ROBUST) ---
+                    # Why? G2P often fails on syllable fragments (e.g., "ple" -> "P L IY" vs "Apple" -> "AE P L").
+                    # Checking if the syllable text exists in the recognized transcript is far more reliable.
+                    
+                    target_syl = syl.lower().strip()
+                    cleaned_transcript = transcript.lower().strip()
+                    
+                    if target_syl in cleaned_transcript:
+                        match_found = True
+                        syllable_matches[i] = True
+                        print(f"DEBUG: Matched syllable '{syl}' in transcript")
+                    else:
+                        print(f"DEBUG: Failed to match '{syl}' in '{cleaned_transcript}'")
+                        
+                except Exception as e:
+                    print(f"Error matching syllable '{syl}': {e}")
+
+            # Get average confidence
+            if words_data:
+                stt_confidence = sum(w.get("confidence", 0) for w in words_data) / len(words_data)
+                
+        except Exception as e:
+            print(f"STT Error: {e}")
+
+        # 2. WaveLM (Fluency Verification)
+        label, wavlm_score = predict_file(filepath)
+        is_fluent = "fluent" in label.lower()
+        
+        # 3. Rhythm/Tap Analysis
+        tap_count_match = len(taps) == len(syllables)
+        
+        # 4. Feedback Generation
+        feedback = ""
+        pecky_state = "idle"
+        
+        correct_syllables_count = sum(syllable_matches)
+        all_syllables_correct = correct_syllables_count == len(syllables)
+        
+        # Calculate accuracy based on syllables found
+        accuracy = correct_syllables_count / len(syllables) if syllables else 0
+        
+        if all_syllables_correct:
+            if is_fluent:
+                feedback = "Perfect! You said every part clearly!"
+                pecky_state = "success"
+            else:
+                feedback = "Great job getting the words right, but try to be smoother."
+                pecky_state = "peck"
+        elif correct_syllables_count > 0:
+            feedback = f"You got {correct_syllables_count} out of {len(syllables)} parts. Keep trying!"
+            pecky_state = "peck"
+        else:
+            feedback = "I didn't hear the parts clearly. Try saying them louder."
+            pecky_state = "confused"
+            
+        return jsonify({
+            "accuracy": accuracy,
+            "transcript": transcript,
+            "feedback": feedback,
+            "pecky_state": pecky_state,
+            "is_sync": tap_count_match,
+            "fluent": is_fluent,
+            "syllable_matches": syllable_matches
+        })
+
+    except Exception as e:
+        print(f"Tapping Analysis Error: {e}")
+        return jsonify({"error": str(e)}), 500
+        
+    finally:
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except:
+                pass
+
+
 @app.route("/analyze/onetap", methods=["POST"])
 def analyze_onetap():
     """

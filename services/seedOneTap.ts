@@ -12,192 +12,194 @@ export interface OneTapContentItem {
   category: 'animals' | 'food' | 'objects' | 'places' | 'actions';
   ipa?: string;
   imageKeyword?: string; // Optional override for asset search (e.g., "Baby Boy" instead of "Baby")
+  ttsSyllables?: string[]; // Optional phonetic syllables for TTS (e.g., "Tie", "Gur" instead of "Ti", "ger")
 }
 
 export const oneTapPool: OneTapContentItem[] = [
   // TIER 1: The Two-Step (2 Syllables)
-  { 
-    id: 'monkey', 
-    text: 'Monkey', 
-    syllables: ['Mon', 'key'], 
-    tier: 1, 
+  {
+    id: 'monkey',
+    text: 'Monkey',
+    syllables: ['Mon', 'key'],
+    tier: 1,
     category: 'animals',
-    ipa: 'ˈmʌŋki' 
+    ipa: 'ˈmʌŋki'
   },
-  { 
-    id: 'apple', 
-    text: 'Apple', 
-    syllables: ['Ap', 'ple'], 
-    tier: 1, 
+  {
+    id: 'apple',
+    text: 'Apple',
+    syllables: ['App', 'le'],
+    tier: 1,
     category: 'food',
-    ipa: 'ˈæpəl' 
+    ipa: 'ˈæpəl'
   },
-  { 
-    id: 'tiger', 
-    text: 'Tiger', 
-    syllables: ['Ti', 'ger'], 
-    tier: 1, 
+  {
+    id: 'tiger',
+    text: 'Tiger',
+    syllables: ['Ti', 'ger'],
+    tier: 1,
     category: 'animals',
-    ipa: 'ˈtaɪɡər' 
+    ipa: 'ˈtaɪɡər',
+    ttsSyllables: ['Tie', 'Gur'] // Force correct pronunciation
   },
-  { 
-    id: 'baby', 
-    text: 'Baby', 
-    syllables: ['Ba', 'by'], 
-    tier: 1, 
+  {
+    id: 'baby',
+    text: 'Baby',
+    syllables: ['Ba', 'by'],
+    tier: 1,
     category: 'objects',
     ipa: 'ˈbeɪbi',
     imageKeyword: 'Baby Face' // Better search term for cute baby illustrations
   },
-  { 
-    id: 'pizza', 
-    text: 'Pizza', 
-    syllables: ['Piz', 'za'], 
-    tier: 1, 
+  {
+    id: 'pizza',
+    text: 'Pizza',
+    syllables: ['Piz', 'za'],
+    tier: 1,
     category: 'food',
-    ipa: 'ˈpiːtsə' 
+    ipa: 'ˈpiːtsə'
   },
-  { 
-    id: 'cookie', 
-    text: 'Cookie', 
-    syllables: ['Cook', 'ie'], 
-    tier: 1, 
+  {
+    id: 'cookie',
+    text: 'Cookie',
+    syllables: ['Cook', 'ie'],
+    tier: 1,
     category: 'food',
-    ipa: 'ˈkʊki' 
+    ipa: 'ˈkʊki'
   },
-  { 
-    id: 'bunny', 
-    text: 'Bunny', 
-    syllables: ['Bun', 'ny'], 
-    tier: 1, 
+  {
+    id: 'bunny',
+    text: 'Bunny',
+    syllables: ['Bun', 'ny'],
+    tier: 1,
     category: 'animals',
     ipa: 'ˈbʌni',
     imageKeyword: 'Cute Rabbit'
   },
-  { 
-    id: 'puppy', 
-    text: 'Puppy', 
-    syllables: ['Pup', 'py'], 
-    tier: 1, 
+  {
+    id: 'puppy',
+    text: 'Puppy',
+    syllables: ['Pup', 'py'],
+    tier: 1,
     category: 'animals',
-    ipa: 'ˈpʌpi' 
+    ipa: 'ˈpʌpi'
   },
 
   // TIER 2: The Tri-Step (3 Syllables)
-  { 
-    id: 'banana', 
-    text: 'Banana', 
-    syllables: ['Ba', 'na', 'na'], 
-    tier: 2, 
+  {
+    id: 'pineapple',
+    text: 'Pineapple',
+    syllables: ['Pine', 'ap', 'ple'],
+    tier: 2,
     category: 'food',
-    ipa: 'bəˈnænə' 
+    ipa: 'ˈpaɪnˌæpəl'
   },
-  { 
-    id: 'elephant', 
-    text: 'Elephant', 
-    syllables: ['El', 'e', 'phant'], 
-    tier: 2, 
+  {
+    id: 'elephant',
+    text: 'Elephant',
+    syllables: ['El', 'e', 'phant'],
+    tier: 2,
     category: 'animals',
-    ipa: 'ˈɛləfənt' 
+    ipa: 'ˈɛləfənt'
   },
-  { 
-    id: 'butterfly', 
-    text: 'Butterfly', 
-    syllables: ['But', 'ter', 'fly'], 
-    tier: 2, 
+  {
+    id: 'butterfly',
+    text: 'Butterfly',
+    syllables: ['But', 'ter', 'fly'],
+    tier: 2,
     category: 'animals',
     ipa: 'ˈbʌtərflaɪ',
     imageKeyword: 'Colorful Butterfly'
   },
-  { 
-    id: 'computer', 
-    text: 'Computer', 
-    syllables: ['Com', 'pu', 'ter'], 
-    tier: 2, 
+  {
+    id: 'computer',
+    text: 'Computer',
+    syllables: ['Com', 'pu', 'ter'],
+    tier: 2,
     category: 'objects',
-    ipa: 'kəmˈpjuːtər' 
+    ipa: 'kəmˈpjuːtər'
   },
-  { 
-    id: 'kangaroo', 
-    text: 'Kangaroo', 
-    syllables: ['Kan', 'ga', 'roo'], 
-    tier: 2, 
+  {
+    id: 'kangaroo',
+    text: 'Kangaroo',
+    syllables: ['Kan', 'ga', 'roo'],
+    tier: 2,
     category: 'animals',
-    ipa: 'ˌkæŋɡəˈruː' 
+    ipa: 'ˌkæŋɡəˈruː'
   },
-  { 
-    id: 'hamburger', 
-    text: 'Hamburger', 
-    syllables: ['Ham', 'bur', 'ger'], 
-    tier: 2, 
+  {
+    id: 'hamburger',
+    text: 'Hamburger',
+    syllables: ['Ham', 'bur', 'ger'],
+    tier: 2,
     category: 'food',
-    ipa: 'ˈhæmbɜrɡər' 
+    ipa: 'ˈhæmbɜrɡər'
   },
-  { 
-    id: 'spaghetti', 
-    text: 'Spaghetti', 
-    syllables: ['Spa', 'ghet', 'ti'], 
-    tier: 2, 
+  {
+    id: 'spaghetti',
+    text: 'Spaghetti',
+    syllables: ['Spa', 'ghet', 'ti'],
+    tier: 2,
     category: 'food',
-    ipa: 'spəˈɡɛti' 
+    ipa: 'spəˈɡɛti'
   },
-  { 
-    id: 'strawberry', 
-    text: 'Strawberry', 
-    syllables: ['Straw', 'ber', 'ry'], 
-    tier: 2, 
+  {
+    id: 'strawberry',
+    text: 'Strawberry',
+    syllables: ['Straw', 'ber', 'ry'],
+    tier: 2,
     category: 'food',
-    ipa: 'ˈstrɔbɛri' 
+    ipa: 'ˈstrɔbɛri'
   },
 
   // TIER 3: The Complex (4+ Syllables)
-  { 
-    id: 'watermelon', 
-    text: 'Watermelon', 
-    syllables: ['Wa', 'ter', 'mel', 'on'], 
-    tier: 3, 
+  {
+    id: 'watermelon',
+    text: 'Watermelon',
+    syllables: ['Wa', 'ter', 'mel', 'on'],
+    tier: 3,
     category: 'food',
-    ipa: 'ˈwɔtərˌmɛlən' 
+    ipa: 'ˈwɔtərˌmɛlən'
   },
-  { 
-    id: 'caterpillar', 
-    text: 'Caterpillar', 
-    syllables: ['Cat', 'er', 'pil', 'lar'], 
-    tier: 3, 
+  {
+    id: 'caterpillar',
+    text: 'Caterpillar',
+    syllables: ['Cat', 'er', 'pil', 'lar'],
+    tier: 3,
     category: 'animals',
-    ipa: 'ˈkætərˌpɪlər' 
+    ipa: 'ˈkætərˌpɪlər'
   },
-  { 
-    id: 'helicopter', 
-    text: 'Helicopter', 
-    syllables: ['Hel', 'i', 'cop', 'ter'], 
-    tier: 3, 
+  {
+    id: 'helicopter',
+    text: 'Helicopter',
+    syllables: ['Hel', 'i', 'cop', 'ter'],
+    tier: 3,
     category: 'objects',
-    ipa: 'ˈhɛlɪˌkɑptər' 
+    ipa: 'ˈhɛlɪˌkɑptər'
   },
-  { 
-    id: 'alligator', 
-    text: 'Alligator', 
-    syllables: ['Al', 'li', 'ga', 'tor'], 
-    tier: 3, 
+  {
+    id: 'alligator',
+    text: 'Alligator',
+    syllables: ['Al', 'li', 'ga', 'tor'],
+    tier: 3,
     category: 'animals',
-    ipa: 'ˈælɪɡeɪtər' 
+    ipa: 'ˈælɪɡeɪtər'
   },
-  { 
-    id: 'avocado', 
-    text: 'Avocado', 
-    syllables: ['Av', 'o', 'ca', 'do'], 
-    tier: 3, 
+  {
+    id: 'avocado',
+    text: 'Avocado',
+    syllables: ['Av', 'o', 'ca', 'do'],
+    tier: 3,
     category: 'food',
-    ipa: 'ˌævəˈkɑdoʊ' 
+    ipa: 'ˌævəˈkɑdoʊ'
   },
-  { 
-    id: 'television', 
-    text: 'Television', 
-    syllables: ['Tel', 'e', 'vi', 'sion'], 
-    tier: 3, 
+  {
+    id: 'television',
+    text: 'Television',
+    syllables: ['Tel', 'e', 'vi', 'sion'],
+    tier: 3,
     category: 'objects',
-    ipa: 'ˈtɛləˌvɪʒən' 
+    ipa: 'ˈtɛləˌvɪʒən'
   },
 ];
 

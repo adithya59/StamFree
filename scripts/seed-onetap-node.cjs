@@ -30,7 +30,7 @@ const oneTapPool = [
 
   // TIER 2: The Triple Threat (3 Syllables)
   { id: 'spaghetti', text: 'Spaghetti', syllables: ['Spa', 'ghet', 'ti'], tier: 2, category: 'food', ipa: 'spəˈɡɛti' },
-  { id: 'banana', text: 'Banana', syllables: ['Ba', 'na', 'na'], tier: 2, category: 'food', ipa: 'bəˈnænə' },
+  { id: 'pineapple', text: 'Pineapple', syllables: ['Pine', 'ap', 'ple'], tier: 2, category: 'food', ipa: 'ˈpaɪnˌæpəl' },
   { id: 'dinosaur', text: 'Dinosaur', syllables: ['Di', 'no', 'saur'], tier: 2, category: 'animals', ipa: 'ˈdaɪnəsɔːr' },
   { id: 'computer', text: 'Computer', syllables: ['Com', 'pu', 'ter'], tier: 2, category: 'objects', ipa: 'kəmˈpjuːtər' },
   { id: 'elephant', text: 'Elephant', syllables: ['E', 'le', 'phant'], tier: 2, category: 'animals', ipa: 'ˈɛləfənt' },
@@ -49,14 +49,14 @@ const oneTapPool = [
 
 async function seedOneTapContent() {
   console.log('🌱 Seeding One-Tap content to Firestore...');
-  
+
   let successCount = 0;
   let errorCount = 0;
 
   for (const word of oneTapPool) {
     try {
       const docRef = db.collection('content_bank').doc(`onetap-${word.id}`);
-      
+
       await docRef.set({
         // Core content
         contentId: `onetap-${word.id}`,
@@ -64,20 +64,20 @@ async function seedOneTapContent() {
         text: word.text,
         syllables: word.syllables,
         syllableCount: word.syllables.length,
-        
+
         // Classification
         tier: word.tier,
         category: word.category,
         ipa: word.ipa || '',
-        
+
         // Compatibility
         compatibleGames: ['onetap'],
-        
+
         // Metadata
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         active: true,
-        
+
         // Game-specific fields
         xpReward: word.tier * 10,
         maxRepetitions: 0,
@@ -96,13 +96,13 @@ async function seedOneTapContent() {
   console.log(`   ✓ Success: ${successCount}`);
   console.log(`   ✗ Errors: ${errorCount}`);
   console.log(`   📦 Total: ${oneTapPool.length}`);
-  
+
   // Print tier distribution
   const tierCounts = oneTapPool.reduce((acc, word) => {
     acc[word.tier] = (acc[word.tier] || 0) + 1;
     return acc;
   }, {});
-  
+
   console.log('\n🎯 Tier Distribution:');
   console.log(`   Tier 1 (2-syl): ${tierCounts[1] || 0} words`);
   console.log(`   Tier 2 (3-syl): ${tierCounts[2] || 0} words`);
