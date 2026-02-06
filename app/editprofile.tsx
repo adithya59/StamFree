@@ -9,12 +9,14 @@ import {
   Image,
   Modal,
   ScrollView,
-  StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
+import { H1, Label } from '@/components/ui/Typography';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 
 const profileAvatars = [
   { id: 'bear', image: require('@/assets/profilepictures/bear.png') },
@@ -27,9 +29,13 @@ const profileAvatars = [
   { id: 'tiger', image: require('@/assets/profilepictures/tiger.png') },
 ];
 
+// ... imports
+// ... imports
+
 export default function EditProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false); // New state
 
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState('');
@@ -68,7 +74,6 @@ export default function EditProfileScreen() {
     fetchProfile();
   }, []);
 
-  // 🔹 Save updated data
   const handleSave = async () => {
     if (!childName || !childAge) {
       Alert.alert('Error', 'Please fill all required fields');
@@ -94,77 +99,86 @@ export default function EditProfileScreen() {
   };
 
   if (loading) {
+    // ... loading view
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1a73e8" />
+      <View className="flex-1 justify-center items-center bg-white dark:bg-slate-900">
+        <ActivityIndicator size="large" color="#0D9488" />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#1a73e8" />
-          </TouchableOpacity>
-          <Text style={styles.title}>Edit Profile</Text>
-          <View style={{ width: 150 }} />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Child Name</Text>
-          <TextInput
-            style={styles.input}
-            value={childName}
-            onChangeText={setChildName}
-            placeholder="Enter name"
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Age</Text>
-          <TextInput
-            style={styles.input}
-            value={childAge}
-            onChangeText={setChildAge}
-            keyboardType="number-pad"
-            placeholder="Enter age"
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Avatar</Text>
+    <ScreenWrapper>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        {/* Header */}
+        <View className="flex-row items-center justify-between mb-6 px-1">
           <TouchableOpacity 
-            style={styles.avatarPickerTrigger}
+            onPress={() => router.back()} 
+            className="w-11 h-11 items-center justify-center bg-white/60 border border-white rounded-full shadow-sm"
+          >
+            <Ionicons name="arrow-back" size={24} color="#166534" />
+          </TouchableOpacity>
+          <H1 className="text-slate-800 dark:text-white">Edit Profile</H1>
+          <View className="w-11" />
+        </View>
+
+        {/* Inputs */}
+        <Input
+          label="Child Name"
+          placeholder="Enter name"
+          value={childName}
+          onChangeText={setChildName}
+          iconName="account"
+        />
+
+        <Input
+          label="Age"
+          placeholder="Enter age"
+          value={childAge}
+          onChangeText={setChildAge}
+          keyboardType="number-pad"
+          iconName="calendar"
+        />
+
+        {/* Avatar Picker Card */}
+        <View className="mb-6">
+          <Label className="mb-3 text-slate-700 dark:text-slate-200">Avatar</Label>
+          <TouchableOpacity 
+            className="bg-white/90 dark:bg-slate-800/90 border-2 border-white/50 dark:border-slate-700/50 rounded-3xl p-6 items-center justify-center min-h-[120px] shadow-lg active:scale-[0.98]"
             onPress={() => setShowAvatarModal(true)}
+            activeOpacity={0.9}
           >
             {selectedAvatar ? (
-              <View style={styles.selectedAvatarPreview}>
-                <Image source={selectedAvatarImage} style={styles.avatarPreviewImage} />
-                <Text style={styles.changeAvatarText}>Change Avatar</Text>
+              <View className="items-center">
+                <Image source={selectedAvatarImage} className="w-16 h-16 mb-3" resizeMode="contain" />
+                <Text className="text-teal-600 dark:text-teal-400 font-bold text-sm">Tap to Change</Text>
               </View>
             ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons name="happy-outline" size={32} color="#1a73e8" />
-                <Text style={styles.avatarPlaceholderText}>Choose a friendly face</Text>
+              <View className="items-center">
+                <Ionicons name="happy-outline" size={40} color="#0D9488" className="mb-3" />
+                <Text className="text-slate-500 dark:text-slate-400 font-semibold">Choose a friendly face</Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Speech Challenges</Text>
-          <View style={styles.chipContainer}>
+        {/* Speech Challenges */}
+        <View className="mb-8">
+          <Label className="mb-3 text-slate-700 dark:text-slate-200">Speech Challenges</Label>
+          <View className="flex-row flex-wrap gap-3">
             {speechOptions.map((item) => {
               const isSelected = speechIssues.includes(item);
               return (
                 <TouchableOpacity
                   key={item}
-                  style={[
-                    styles.chip,
-                    isSelected && styles.chipSelected,
-                  ]}
+                  className={`px-5 py-3 rounded-full border-2 shadow-sm active:scale-95 ${
+                    isSelected 
+                      ? 'bg-teal-500 border-teal-600' 
+                      : 'bg-white/90 dark:bg-slate-800/90 border-slate-200 dark:border-slate-700'
+                  }`}
                   onPress={() =>
                     setSpeechIssues((prev) =>
                       prev.includes(item)
@@ -172,12 +186,12 @@ export default function EditProfileScreen() {
                         : [...prev, item]
                     )
                   }
+                  activeOpacity={0.8}
                 >
                   <Text
-                    style={[
-                        styles.chipText,
-                        isSelected && styles.chipTextSelected,
-                    ]}
+                    className={`font-bold text-sm ${
+                      isSelected ? 'text-white' : 'text-slate-600 dark:text-slate-300'
+                    }`}
                   >
                     {item}
                   </Text>
@@ -187,9 +201,7 @@ export default function EditProfileScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveText}>Save Changes</Text>
-        </TouchableOpacity>
+        <Button title="Save Changes" onPress={handleSave} />
       </ScrollView>
 
       {/* Avatar Selection Modal */}
@@ -199,225 +211,42 @@ export default function EditProfileScreen() {
         visible={showAvatarModal}
         onRequestClose={() => setShowAvatarModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.avatarModalContent]}>
-            <Text style={styles.modalTitle}>Pick an Avatar</Text>
-            <View style={styles.avatarGrid}>
+        <View className="flex-1 bg-black/60 justify-center items-center p-6">
+          <View className="bg-white dark:bg-slate-800 rounded-[32px] p-8 w-full max-w-sm items-center shadow-2xl border-2 border-white/50 dark:border-slate-700/50">
+            <H1 className="text-center mb-6 text-slate-800 dark:text-white text-2xl">Pick an Avatar</H1>
+            <View className="flex-row flex-wrap gap-4 justify-center mb-8">
               {profileAvatars.map((avatar) => {
                 const isSelected = selectedAvatar === avatar.id;
                 return (
                   <TouchableOpacity
                     key={avatar.id}
-                    style={[
-                      styles.avatarItem,
-                      isSelected && styles.avatarSelected,
-                    ]}
+                    className={`w-20 h-20 rounded-2xl border-3 items-center justify-center shadow-md active:scale-95 ${
+                      isSelected 
+                        ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/30' 
+                        : 'border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700'
+                    }`}
                     onPress={() => {
                       setSelectedAvatar(avatar.id);
                       setShowAvatarModal(false);
                     }}
+                    activeOpacity={0.8}
                   >
-                    <Image source={avatar.image} style={styles.avatarImage} />
+                    <Image source={avatar.image} className="w-16 h-16" resizeMode="contain" />
                   </TouchableOpacity>
                 );
               })}
             </View>
-            <TouchableOpacity
-              style={styles.closeButton}
+            <Button 
+              title="Close" 
+              variant="secondary" 
               onPress={() => setShowAvatarModal(false)}
-            >
-              <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
+              className="w-full" 
+            />
           </View>
         </View>
       </Modal>
-    </View>
+
+      {/* Success Modal removed */}
+    </ScreenWrapper>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    padding: 24,
-    paddingTop: 60,
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 32,
-  },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1a73e8',
-  },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: '#F9FAFB',
-    color: '#111827',
-    fontSize: 16,
-  },
-  avatarPickerTrigger: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 16,
-    backgroundColor: '#F9FAFB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 100,
-  },
-  selectedAvatarPreview: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  avatarPreviewImage: {
-    width: 70,
-    height: 70,
-    resizeMode: 'contain',
-  },
-  changeAvatarText: {
-    color: '#1a73e8',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  avatarPlaceholder: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  avatarPlaceholderText: {
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  chipContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  chip: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#F9FAFB',
-  },
-  chipSelected: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#1a73e8',
-  },
-  chipText: {
-    color: '#374151',
-    fontWeight: '500',
-    fontSize: 14,
-  },
-  chipTextSelected: {
-    color: '#1a73e8',
-    fontWeight: '600',
-  },
-  saveButton: {
-    backgroundColor: '#1a73e8',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 20,
-    shadowColor: '#1a73e8',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  saveText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.85)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: "white",
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    width: "100%",
-    maxWidth: 340,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-  },
-  avatarModalContent: {
-    maxWidth: 380,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 20,
-    color: '#1F2937',
-  },
-  avatarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  avatarItem: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 2,
-    borderColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  avatarSelected: {
-    borderColor: '#1a73e8',
-    backgroundColor: '#EFF6FF',
-  },
-  avatarImage: {
-    width: 48,
-    height: 48,
-    resizeMode: 'contain',
-  },
-  closeButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-  },
-  closeButtonText: {
-    color: '#4B5563',
-    fontWeight: '600',
-  },
-});
-
-

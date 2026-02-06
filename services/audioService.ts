@@ -2,6 +2,7 @@ import { Audio } from "expo-av";
 
 let recording: Audio.Recording | null = null;
 let isPreparing = false; // Prevent concurrent prepare/create
+let recordingStartTime: number | null = null; // Track when recording started
 
 export async function startRecording() {
   try {
@@ -68,16 +69,23 @@ export async function startRecording() {
     );
     
     recording = newRecording;
-    console.log("Recording started");
+    recordingStartTime = Date.now(); // Track start time for duration calculation
+    console.log("Recording started at:", recordingStartTime);
   } catch (error) {
     console.error("Failed to start recording:", error);
     recording = null; // Reset on failure
+    recordingStartTime = null;
   } finally {
     isPreparing = false;
   }
 }
 
-export async function stopRecording(): Promise<string | null> {
+export interface RecordingResult {
+  uri: string;
+  duration: number; // Duration in milliseconds
+}
+
+export async function stopRecording(): Promise<RecordingResult | null> {
   if (!recording) {
     console.log("No active recording to stop.");
     return null;
@@ -90,13 +98,20 @@ export async function stopRecording(): Promise<string | null> {
         await recording.stopAndUnloadAsync();
     }
     const uri = recording.getURI();
-    console.log("Recording stopped, URI:", uri);
+    
+    // Calculate duration
+    const duration = recordingStartTime ? Date.now() - recordingStartTime : 0;
+    
+    console.log("Recording stopped, URI:", uri, "Duration:", duration, "ms");
     
     recording = null; // Clear the object for the next session
-    return uri;
+    recordingStartTime = null;
+    
+    return uri ? { uri, duration } : null;
   } catch (error) {
     console.error("Failed to stop recording:", error);
     recording = null; // Ensure cleanup even on error
+    recordingStartTime = null;
     return null;
   }
 }

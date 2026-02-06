@@ -8,7 +8,7 @@ export interface RateResult {
 
 /**
  * Calculates the speaking rate and returns a status based on therapeutic targets.
- * Target: 80 - 120 WPM (Turtle Mode)
+ * Target: 70 - 130 WPM (Turtle Mode)
  */
 export function calculateSpeakingRate(
   wordCount: number, 
@@ -18,14 +18,14 @@ export function calculateSpeakingRate(
   const durationMin = durationMs / 1000 / 60;
   
   // 2. Calculate WPM
-  if (durationMin < 0.005) { // Guard against extremely short clips (< 0.3s)
+  if (durationMin < 0.005) { // Guard against extremely short clips (<0.3s)
     return { wpm: 0, status: 'too_fast', feedback: 'Too short! Try saying the whole thing. 🐢' };
   }
   
   const wpm = Math.round(wordCount / durationMin);
 
   // 3. Determine Status
-  if (wpm > 120) {
+  if (wpm > 130) {
     return { 
       wpm, 
       status: 'too_fast', 
@@ -35,7 +35,7 @@ export function calculateSpeakingRate(
     return { 
       wpm,
       status: 'too_slow',
-      feedback: 'A bit too sleepy! Let\'s try that again. 🐢'
+      feedback: 'A bit too sleepy! Wake up! 💤'
     };
   } else {
     return { 

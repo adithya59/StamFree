@@ -2,14 +2,18 @@ import { Audio } from 'expo-av';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  ActivityIndicator,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
 import ThinkingOverlay from '../components/ui/ThinkingOverlay';
 import { getAnalyzeAudioUrl, getHealthUrl } from '../config/backend';
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
+import { H1, H2, Label, P } from '@/components/ui/Typography';
+import { Ionicons } from '@expo/vector-icons';
+import { GameCard } from '@/components/ui/GameCard';
 
 export default function Demo() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -36,13 +40,8 @@ export default function Demo() {
   async function pingBackend() {
     setBackendStatus('unknown');
     try {
-      // Create a timeout promise
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
       const fetchRequest = fetch(getHealthUrl(), { method: 'GET' });
-      
-      // We expect a 404 is fine (means server is reachable), 
-      // but ideally your flask app has a simple '/' route.
-      // If fetch works, server is UP.
       await Promise.race([fetchRequest, timeout]);
       setBackendStatus('ok');
     } catch (e) {
@@ -103,7 +102,6 @@ export default function Demo() {
       setResult(data);
       setThinkingMessage(undefined);
     } catch (error) {
-      // Show retry overlay with friendly guidance
       setThinkingMessage('Couldn\'t reach the server. Check IP, then retry.');
       setAnalysisFailed(true);
     } finally {
@@ -112,177 +110,102 @@ export default function Demo() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Stutter Detection</Text>
+    <ScreenWrapper>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-start', alignItems: 'center', paddingBottom: 40, paddingTop: 60 }}>
+        <H1 className="text-center mb-6 text-brand-primary">Stutter Detection</H1>
 
-      {/* STATUS INDICATOR */}
-      <TouchableOpacity onPress={pingBackend} style={styles.statusContainer}>
-        <View style={[styles.statusDot, 
-          backendStatus === 'ok' ? styles.statusOk : 
-          backendStatus === 'down' ? styles.statusDown : styles.statusUnknown
-        ]} />
-        <Text style={styles.statusText}>
-          Server: {backendStatus === 'ok' ? "Connected" : backendStatus === 'down' ? "Unreachable" : "Checking..."}
-        </Text>
-      </TouchableOpacity>
-
-      {/* RECORD BUTTON */}
-      <View style={styles.card}>
-        <TouchableOpacity
-          style={[styles.recordButton, isRecording ? styles.recording : null]}
-          onPress={isRecording ? stopRecording : startRecording}
+        {/* STATUS INDICATOR */}
+        <TouchableOpacity 
+          onPress={pingBackend} 
+          className="flex-row items-center bg-white dark:bg-slate-800 px-4 py-2 rounded-full shadow-sm mb-12 border border-slate-100 dark:border-slate-700"
         >
-          <Text style={styles.btnText}>
-            {isRecording ? 'STOP RECORDING' : 'TAP TO RECORD'}
+          <View className={`w-3 h-3 rounded-full mr-2 ${
+            backendStatus === 'ok' ? 'bg-green-500' : 
+            backendStatus === 'down' ? 'bg-red-500' : 'bg-slate-400'
+          }`} />
+          <Text className="text-slate-600 dark:text-slate-300 font-medium">
+            Server: {backendStatus === 'ok' ? "Connected" : backendStatus === 'down' ? "Unreachable" : "Checking..."}
           </Text>
         </TouchableOpacity>
-      </View>
 
-      <ThinkingOverlay
-        visible={uploading || analysisFailed}
-        title={analysisFailed ? 'Network issue' : 'Thinking...'}
-        message={analysisFailed ? (thinkingMessage || 'Please check connection and try again.') : 'Analyzing your speech. This takes a few seconds.'}
-        blocking={!analysisFailed}
-        onCancel={analysisFailed ? () => setAnalysisFailed(false) : undefined}
-        onRetry={analysisFailed && lastUri ? () => { setAnalysisFailed(false); uploadAudio(lastUri); } : undefined}
-      />
+        {/* RECORD BUTTON */}
+        <View className="mb-12 items-center justify-center">
+            <View className={`p-1.5 rounded-full border-4 ${isRecording ? 'border-red-400/50' : uploading ? 'border-blue-400/50' : 'border-brand-primary/40'} bg-white/50 dark:bg-black/20 backdrop-blur-sm`}>
+                <TouchableOpacity
+                    className={`w-32 h-32 rounded-full justify-center items-center shadow-xl ${
+                        uploading ? 'bg-blue-500' : isRecording ? 'bg-red-500' : 'bg-brand-primary'
+                    }`}
+                    onPressIn={startRecording}
+                    onPressOut={stopRecording}
+                    disabled={uploading}
+                    activeOpacity={0.9}
+                >
+                    {uploading ? (
+                        <ActivityIndicator color="white" size="large" />
+                    ) : (
+                        <Ionicons 
+                            name="mic" 
+                            size={48} 
+                            color="white" 
+                        />
+                    )}
+                    <Text className="text-white font-extrabold text-xs mt-2 tracking-widest opacity-90 uppercase">
+                        {uploading ? '...' : isRecording ? 'RELEASE' : 'HOLD'}
+                    </Text>
+                </TouchableOpacity>
+            </View>
+        </View>
 
-      {/* RESULTS SECTION */}
-      {result && (
-        <View style={styles.resultBox}>
-          
-          {/* 1. MAIN RESULT */}
-          <Text style={styles.resultHeader}>Analysis Result</Text>
-          <Text style={[styles.mainResult, result.is_stutter ? styles.textRed : styles.textGreen]}>
-            {result.is_stutter ? `⚠️ ${result.type} detected` : '✅ Fluent speech'}
-          </Text>
+        <ThinkingOverlay
+          visible={uploading || analysisFailed}
+          title={analysisFailed ? 'Network issue' : 'Thinking...'}
+          message={analysisFailed ? (thinkingMessage || 'Please check connection and try again.') : 'Analyzing your speech. This takes a few seconds.'}
+          blocking={!analysisFailed}
+          onCancel={analysisFailed ? () => setAnalysisFailed(false) : undefined}
+          onRetry={analysisFailed && lastUri ? () => { setAnalysisFailed(false); uploadAudio(lastUri); } : undefined}
+        />
 
-          {/* 2. TRANSCRIPT (New) */}
-          <View style={styles.divider} />
-          <Text style={styles.label}>Transcript:</Text>
-          <Text style={styles.transcriptText}>
-            "{result.transcript || "No speech detected"}"
-          </Text>
+        {/* RESULTS SECTION */}
+        {result && (
+          <View className="w-full bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-700">
+            
+            {/* 1. MAIN RESULT */}
+            <Label className="text-center mb-2 uppercase tracking-widest text-slate-400">Analysis Result</Label>
+            <H2 className={`text-center mb-6 ${result.is_stutter ? 'text-red-500' : 'text-green-500'}`}>
+              {result.is_stutter ? `⚠️ ${result.type} detected` : '✅ Fluent speech'}
+            </H2>
 
-          {/* 3. DETAILS (If Stutter) */}
-          {result.is_stutter && (
-            <View style={styles.detailContainer}>
-              
-              {/* PHONEME BADGE (New) */}
-              {result.problem_phoneme && (
-                <View style={styles.phonemeBox}>
-                  <Text style={styles.phonemeLabel}>Trouble Sound</Text>
-                  <Text style={styles.phonemeMain}>/{result.problem_phoneme}/</Text>
-                </View>
-              )}
+            {/* 2. TRANSCRIPT */}
+            <View className="h-[1px] bg-slate-100 dark:bg-slate-700 my-4 w-full" />
+            <Label className="mb-2">Transcript:</Label>
+            <P className="italic text-slate-700 dark:text-slate-300">
+              "{result.transcript || "No speech detected"}"
+            </P>
 
-              {/* SCORES */}
-              <View style={styles.statsRow}>
-                <View style={styles.statCol}>
-                  <Text style={styles.statLabel}>Confidence</Text>
-                  <Text style={styles.statValue}>{((result.stutter_score || 0) * 100).toFixed(0)}%</Text>
+            {/* 3. DETAILS (If Stutter) */}
+            {result.is_stutter && (
+              <View className="mt-4">
+                
+                {/* PHONEME BADGE */}
+                {result.problem_phoneme && (
+                  <View className="bg-red-50 dark:bg-red-900/20 p-4 rounded-xl items-center my-4 border border-red-500 border-dashed">
+                    <Text className="text-red-500 font-bold mb-1">Trouble Sound</Text>
+                    <Text className="text-4xl font-extrabold text-red-500">/{result.problem_phoneme}/</Text>
+                  </View>
+                )}
+
+                {/* SCORES */}
+                <View className="flex-row justify-between mt-2">
+                  <View className="items-center flex-1">
+                    <Label>Confidence</Label>
+                    <H2 className="text-slate-800 dark:text-slate-100">{((result.stutter_score || 0) * 100).toFixed(0)}%</H2>
+                  </View>
                 </View>
               </View>
-            </View>
-          )}
-        </View>
-      )}
-    </ScrollView>
+            )}
+          </View>
+        )}
+      </ScrollView>
+    </ScreenWrapper>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: '#F2F2F7', // iOS System Gray
-    alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1C1C1E',
-    marginBottom: 10,
-  },
-  // Status Styles
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 30,
-    padding: 8,
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    elevation: 1,
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 8,
-  },
-  statusOk: { backgroundColor: '#34C759' },
-  statusDown: { backgroundColor: '#FF3B30' },
-  statusUnknown: { backgroundColor: '#8E8E93' },
-  statusText: { fontSize: 14, color: '#666' },
-
-  // Card & Button
-  card: { width: '100%', alignItems: 'center', marginBottom: 20 },
-  recordButton: {
-    backgroundColor: '#007AFF',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 10,
-    shadowColor: '#007AFF',
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  recording: { backgroundColor: '#FF3B30', shadowColor: '#FF3B30' },
-  btnText: { color: 'white', fontSize: 18, fontWeight: '700', letterSpacing: 1 },
-
-  // Results
-  resultBox: {
-    width: '100%',
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 24,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-  },
-  resultHeader: { fontSize: 14, fontWeight: '600', color: '#8E8E93', textTransform: 'uppercase', marginBottom: 8 },
-  mainResult: { fontSize: 24, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
-  textRed: { color: '#FF3B30' },
-  textGreen: { color: '#34C759' },
-  
-  divider: { height: 1, backgroundColor: '#E5E5EA', marginVertical: 15 },
-  
-  label: { fontSize: 16, fontWeight: '600', color: '#1C1C1E', marginBottom: 4 },
-  transcriptText: { fontSize: 18, color: '#3A3A3C', fontStyle: 'italic', lineHeight: 24 },
-
-  // Detail View
-  detailContainer: { marginTop: 10 },
-  phonemeBox: {
-    backgroundColor: '#FFECEB',
-    padding: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginVertical: 15,
-    borderWidth: 1,
-    borderColor: '#FF3B30',
-  },
-  phonemeLabel: { color: '#FF3B30', fontWeight: '600', marginBottom: 4 },
-  phonemeMain: { fontSize: 32, fontWeight: '800', color: '#FF3B30' },
-
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  statCol: { alignItems: 'center', flex: 1 },
-  statLabel: { fontSize: 14, color: '#8E8E93' },
-  statValue: { fontSize: 20, fontWeight: '700', color: '#1C1C1E' },
-  
-  debugText: { fontSize: 12, color: '#C7C7CC', textAlign: 'center', marginTop: 10 },
-});

@@ -25,7 +25,6 @@ export const VoiceIndicator: React.FC<VoiceIndicatorProps> = ({
 }) => {
   if (!isVoicedTarget) return null;
 
-  const passed = Boolean(voicedDetected) || (typeof speechProb === 'number' && speechProb >= threshold);
   const percent = Math.max(0, Math.min(1, speechProb ?? 0));
   const percentValue = Math.round(percent * 100);
   // Ensure bar is visible even at low percentages
@@ -33,19 +32,42 @@ export const VoiceIndicator: React.FC<VoiceIndicatorProps> = ({
 
   let title = 'Use your voice';
   let helper = feedback || 'Try humming the target sound so I can hear it.';
-  let color = '#D97706';
-  let icon: 'check-circle' | 'microphone-off' | 'waveform' = 'microphone-off';
+  let color = '#D97706'; // Amber default
+  let icon: 'check-circle' | 'microphone-off' | 'waveform' | 'alert' = 'microphone-off';
 
   if (isLoading) {
     title = 'Listening...';
     helper = feedback || 'Analyzing your voice quality.';
     color = '#1a73e8';
     icon = 'waveform';
-  } else if (passed) {
-    title = 'Voice detected!';
-    helper = feedback || 'Great job using your voice. Keep it smooth and steady!';
-    color = '#059669';
-    icon = 'check-circle';
+  } else {
+    // Priority 1: Use backend feedback if provided (e.g., "Don't just blow air")
+    if (feedback && feedback.toLowerCase().includes('blow')) {
+      title = 'Try again';
+      helper = feedback;
+      color = '#DC2626'; // Red
+      icon = 'alert';
+    }
+    // Priority 2: Confidence-based tiers
+    else if (percentValue >= 70) {
+      // High confidence - Green
+      title = 'Voice detected!';
+      helper = feedback || 'Great job using your voice. Keep it smooth and steady!';
+      color = '#059669'; // Green
+      icon = 'check-circle';
+    } else if (percentValue >= 40) {
+      // Mid confidence - Amber
+      title = 'Keep going';
+      helper = feedback || 'I can hear you! Try to be a bit louder or clearer.';
+      color = '#D97706'; // Amber/Orange
+      icon = 'waveform';
+    } else {
+      // Low confidence - Red
+      title = 'Too quiet';
+      helper = feedback || 'I can barely hear you. Try humming louder!';
+      color = '#DC2626'; // Red
+      icon = 'microphone-off';
+    }
   }
 
   return (

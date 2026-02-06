@@ -121,19 +121,19 @@ export function useSnakeSession(
           );
 
           const finalStars = aiResult ? aiResult.stars : optimisticStars;
-          // Use backend's xp_earned calculation (tier-based deduction)
-          // Fallback based on tier if backend doesn't return xp_earned
-          let xpEarned = aiResult?.xp_earned;
-          if (!xpEarned) {
-            // Tier 1: 10/7/4, Tier 2: 20/15/10, Tier 3: 30/23/16
-            const tier = sessionConfig.tier || 1;
-            if (tier === 1) {
-              xpEarned = finalStars === 3 ? 10 : (finalStars === 2 ? 7 : 4);
-            } else if (tier === 2) {
-              xpEarned = finalStars === 3 ? 20 : (finalStars === 2 ? 15 : 10);
-            } else {
-              xpEarned = finalStars === 3 ? 30 : (finalStars === 2 ? 23 : 16);
-            }
+          
+          // Use backend's xp value directly
+          const xpEarned = aiResult?.xp || 0;
+
+          // Only update mastery if analysis succeeded
+          if (!aiResult) {
+            console.warn('[SnakeSession] Skipping mastery update - analysis failed');
+            return {
+              aiResult: null,
+              leveledUp: false,
+              nextPhoneme: undefined,
+              totalXp: undefined
+            };
           }
 
           // B. Update Playlist Mastery (The Slide)

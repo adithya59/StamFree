@@ -7,54 +7,72 @@ export interface TurtleVideoProps {
   currentStep: number;
   /** Total number of segments in the video/session */
   totalSteps?: number;
+  /** Duration of the video in milliseconds (defaults to 13000ms per spec) */
+  videoDuration?: number;
+  /** NEW: 0, 1, or 2 for journey selection */
+  journeyIndex: number;
   /** Callback when a segment finishes playing */
   onSegmentComplete?: () => void;
+  style?: any; // Allow custom styles
 }
+
+// Mapping of journeyIndex to video sources
+const VIDEO_SOURCES = [
+  require('../../assets/videos/turtle1.mp4'),
+  require('../../assets/videos/turtle2.mp4'),
+  require('../../assets/videos/turtle3.mp4'),
+];
 
 export const TurtleVideo: React.FC<TurtleVideoProps> = ({ 
   currentStep, 
   totalSteps = 4,
-  onSegmentComplete
+  videoDuration = 13000, // Hardcoded to 13 seconds per TURTLE_GAME_SPEC.md
+  journeyIndex, // NEW: Add journeyIndex to props
+  onSegmentComplete,
+  style
 }) => {
   const videoRef = useRef<Video>(null);
-  const [duration, setDuration] = useState<number>(0);
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const isPlayingRef = useRef(false);
 
-  // Load duration once the video is ready
+  // Calculate segment duration based on hardcoded total duration
+  const SEGMENT_DURATION = videoDuration / totalSteps; // 3250ms for 4 segments
+
+  // Load state tracking
   const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded && status.durationMillis) {
-      setDuration(status.durationMillis);
+    if (status.isLoaded && !isLoaded) {
+      setIsLoaded(true);
+      console.log(`[TurtleVideo] Video loaded. Duration: ${videoDuration}ms, Segment: ${SEGMENT_DURATION}ms`);
     }
   };
 
   useEffect(() => {
-    if (currentStep > 0 && duration > 0 && videoRef.current) {
-      const segmentDuration = duration / totalSteps;
-      const startTime = (currentStep - 1) * segmentDuration;
-      const endTime = currentStep * segmentDuration;
+    if (currentStep > 0 && isLoaded && videoRef.current) {
+      const startTime = (currentStep - 1) * SEGMENT_DURATION;
+      const endTime = currentStep * SEGMENT_DURATION;
 
-      console.log(`[TurtleVideo] Playing segment ${currentStep}: ${startTime}ms to ${endTime}ms`);
+      console.log(`[TurtleVideo] Playing segment ${currentStep}/${totalSteps}: ${startTime}ms to ${endTime}ms`);
       
       isPlayingRef.current = true;
       videoRef.current.playFromPositionAsync(startTime).then(() => {
-        // Stop logic: Check position or use timeout
-        // Timeout is more reliable for background segments
+        // Auto-pause after segment duration
         setTimeout(() => {
           videoRef.current?.pauseAsync();
           isPlayingRef.current = false;
           onSegmentComplete?.();
-        }, segmentDuration);
+          console.log(`[TurtleVideo] Segment ${currentStep} complete`);
+        }, SEGMENT_DURATION);
       });
     }
-  }, [currentStep, duration]);
+  }, [currentStep, isLoaded]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <Video
         ref={videoRef}
-        source={require('../../assets/images/turtle1.mp4')}
+        source={VIDEO_SOURCES[journeyIndex] || VIDEO_SOURCES[0]}
         style={StyleSheet.absoluteFillObject}
-        resizeMode={ResizeMode.COVER}
+        resizeMode={ResizeMode.COVER} // Changed to COVER to remove black bars
         shouldPlay={false}
         isMuted={true}
         onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
@@ -65,7 +83,9 @@ export const TurtleVideo: React.FC<TurtleVideoProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    // Removed absoluteFillObject allowing parent to control layout
     backgroundColor: '#000',
+    overflow: 'hidden', // Ensure video doesn't bleed out
   },
 });
+

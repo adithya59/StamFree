@@ -5,11 +5,11 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
-  StyleSheet,
   Text,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
+import { H1, H2, Label, P } from '@/components/ui/Typography';
 
 interface PhonemeData {
   id: string;
@@ -75,26 +75,30 @@ export default function ProgressScreen() {
 
     const hits = stats?.successCount || 0;
     const attempts = stats?.attempts || 0;
-    const misses = attempts - hits;
     const percentage = attempts > 0 ? Math.round((hits / attempts) * 100) : 0;
 
     return (
-      <View key={id} style={[styles.card, isMastered && styles.cardMastered]}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.phonemeText}>{data.phoneme}</Text>
+      <View 
+        key={id} 
+        className={`w-[48%] bg-white dark:bg-slate-800 rounded-2xl p-4 border shadow-sm mb-3 ${
+          isMastered ? 'border-green-200 bg-green-50 dark:bg-green-900/10 dark:border-green-800' : 'border-slate-100 dark:border-slate-700'
+        }`}
+      >
+        <View className="flex-row justify-between items-start mb-1">
+          <Text className="text-2xl font-black text-brand-primary dark:text-brand-light">{data.phoneme}</Text>
           {isMastered && (
             <MaterialCommunityIcons name="check-decagram" size={20} color="#059669" />
           )}
         </View>
-        <Text style={styles.exampleText}>{data.example}</Text>
+        <Text className="text-slate-500 dark:text-slate-400 text-xs font-medium mb-3">{data.example}</Text>
         
-        <View style={styles.cardFooter}>
-          <View style={styles.tierPill}>
-            <Text style={styles.tierText}>Tier {data.tier}</Text>
+        <View className="flex-row justify-between items-center w-full">
+          <View className="bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-md">
+            <Text className="text-blue-600 dark:text-blue-300 text-[10px] font-bold">Tier {data.tier}</Text>
           </View>
           {stats && attempts > 0 && (
-            <View style={styles.statsPill}>
-              <Text style={styles.statsText}>{hits}/{attempts} ({percentage}%)</Text>
+            <View className="bg-amber-50 dark:bg-amber-900/30 px-2 py-1 rounded-md border border-amber-100 dark:border-amber-900/50">
+              <Text className="text-amber-600 dark:text-amber-400 text-[10px] font-bold">{hits}/{attempts} ({percentage}%)</Text>
             </View>
           )}
         </View>
@@ -104,261 +108,82 @@ export default function ProgressScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#1a73e8" />
-        <Text style={styles.loadingText}>Loading your progress...</Text>
+      <View className="flex-1 justify-center items-center bg-white dark:bg-slate-900">
+        <ActivityIndicator size="large" color="#0D9488" />
+        <P className="mt-4 text-slate-400">Loading your progress...</P>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Your Speech Journey</Text>
-        <Text style={styles.subtitle}>Track your mastered sounds and current goals.</Text>
-      </View>
+    <ScreenWrapper>
+      <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
+        <View className="px-6 pt-4 mb-6">
+          <H1 className="text-brand-primary mb-2">Your Journey</H1>
+          <P className="text-slate-600 dark:text-slate-400">Track your mastered sounds and current goals.</P>
+        </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Snake Game Section */}
-        <View style={styles.gameSectionCard}>
-          <View style={styles.gameHeader}>
-            <View style={styles.gameIconCircle}>
+        <View className="mx-4 bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm mb-6">
+          <View className="flex-row items-center gap-4 mb-6">
+            <View className="w-14 h-14 rounded-full bg-emerald-500 items-center justify-center shadow-lg shadow-emerald-500/30">
               <MaterialCommunityIcons name="snake" size={28} color="#fff" />
             </View>
-            <View>
-              <Text style={styles.gameTitle}>Snake</Text>
-              <Text style={styles.gameSubtitle}>Master your sounds by holding them long and smooth.</Text>
+            <View className="flex-1">
+              <H2 className="text-slate-800 dark:text-white">Snake</H2>
+              <P className="text-xs text-slate-500 dark:text-slate-400">Master your sounds by holding them long and smooth.</P>
             </View>
           </View>
 
-          <View style={styles.gameDivider} />
+          <View className="h-[1px] bg-slate-100 dark:bg-slate-700 w-full mb-6" />
 
           {/* Active Section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons name="bullseye-arrow" size={20} color="#1a73e8" />
-              <Text style={styles.sectionTitle}>Currently Practicing</Text>
+          <View className="mb-8">
+            <View className="flex-row items-center gap-2 mb-4">
+              <MaterialCommunityIcons name="bullseye-arrow" size={20} color="#0D9488" />
+              <Label className="text-slate-600 dark:text-slate-300">Currently Practicing</Label>
             </View>
             
-            <View style={styles.grid}>
+            <View className="flex-row flex-wrap gap-[4%]">
               {playlist?.activePhonemes.map((id) => renderPhonemeItem(id, false))}
               {(!playlist?.activePhonemes || playlist.activePhonemes.length === 0) && (
-                <Text style={styles.emptyText}>No active sounds. Start a game to begin!</Text>
+                <Text className="text-slate-400 text-sm italic w-full text-center py-4">No active sounds. Start a game to begin!</Text>
               )}
             </View>
           </View>
 
           {/* Mastered Section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons name="trophy" size={20} color="#FFD700" />
-              <Text style={styles.sectionTitle}>Mastered Sounds</Text>
+          <View>
+            <View className="flex-row items-center gap-2 mb-4">
+              <MaterialCommunityIcons name="trophy" size={20} color="#F59E0B" />
+              <Label className="text-slate-600 dark:text-slate-300">Mastered Sounds</Label>
             </View>
             
-            <View style={styles.grid}>
+            <View className="flex-row flex-wrap gap-[4%]">
               {playlist?.masteredPhonemes.map((id) => renderPhonemeItem(id, true))}
               {(!playlist?.masteredPhonemes || playlist.masteredPhonemes.length === 0) && (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>Your mastered sounds will appear here once you master a sound!</Text>
+                <View className="w-full py-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl items-center justify-center bg-slate-50 dark:bg-slate-900/50">
+                  <MaterialCommunityIcons name="trophy-outline" size={32} color="#CBD5E1" className="mb-2" />
+                  <Text className="text-slate-400 text-xs text-center px-4">Your mastered sounds will appear here once you master a sound!</Text>
                 </View>
               )}
             </View>
           </View>
         </View>
 
-        {/* Placeholder for other games */}
-        <View style={[styles.gameSectionCard, styles.lockedSection]}>
-          <View style={styles.gameHeader}>
-            <View style={[styles.gameIconCircle, { backgroundColor: '#9CA3AF' }]}>
+        {/* Coming Soon Section */}
+        <View className="mx-4 bg-slate-100 dark:bg-slate-800/50 rounded-3xl p-5 border border-dashed border-slate-200 dark:border-slate-700 opacity-70">
+          <View className="flex-row items-center gap-4">
+            <View className="w-14 h-14 rounded-full bg-slate-400 items-center justify-center">
               <MaterialCommunityIcons name="tortoise" size={28} color="#fff" />
             </View>
-            <View>
-              <Text style={styles.gameTitle}>Turtle</Text>
-              <Text style={styles.gameSubtitle}>Coming soon: Track your speech rate and phrasing!</Text>
+            <View className="flex-1">
+              <H2 className="text-slate-600 dark:text-slate-400">Turtle</H2>
+              <P className="text-xs text-slate-500 dark:text-slate-500">Coming soon: Track your speech rate and phrasing!</P>
             </View>
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenWrapper>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-  header: {
-    padding: 24,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1F2937',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#6B7280',
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 20,
-  },
-  gameSectionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  lockedSection: {
-    opacity: 0.6,
-    backgroundColor: '#F3F4F6',
-  },
-  gameHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  gameIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#1DD1A1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gameTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#1F2937',
-  },
-  gameSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-    maxWidth: '85%',
-  },
-  gameDivider: {
-    height: 1,
-    backgroundColor: '#F3F4F6',
-    marginVertical: 20,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#4B5563',
-  },
-  sectionDesc: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 16,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  card: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 14,
-    width: '47.5%',
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  cardMastered: {
-    borderColor: '#D1FAE5',
-    backgroundColor: '#F0FDF4',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 4,
-  },
-  phonemeText: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1a73e8',
-  },
-  exampleText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  tierPill: {
-    backgroundColor: '#E8F0FE',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  tierText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#1a73e8',
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  statsPill: {
-    backgroundColor: '#FFFBEB',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FEF3C7',
-  },
-  statsText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#D97706',
-  },
-  loadingText: {
-    marginTop: 12,
-    color: '#6B7280',
-  },
-  emptyCard: {
-    width: '100%',
-    padding: 20,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    alignItems: 'center',
-  },
-  emptyText: {
-    color: '#9CA3AF',
-    textAlign: 'center',
-    fontSize: 13,
-  },
-});
