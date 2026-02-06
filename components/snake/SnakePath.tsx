@@ -29,14 +29,13 @@ const AnimatedSvgImage = Animated.createAnimatedComponent(SvgImage);
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Pre-defined smooth letter-shaped paths (normalized 0-100 coordinate system)
+// Optimized selection: removed extreme paths (very short I/L or very long J) for consistent difficulty
 const PATH_LIBRARY = [
-  "M 80,12 C 20,12 82,44 18,44 C 82,56 18,88 80,88", // S-Shape (more amplitude)
-  "M 50,10 C 60,30 40,70 50,90",                     // I-Shape (Wavy vertical)
-  "M 80,20 C 12,20 12,82 78,82",                     // C-Shape
-  "M 15,10 C 15,100 85,100 85,10",                   // U-Shape
-  "M 10,10 C 45,110 55,110 90,10",                   // V-Shape
-  "M 25,10 L 25,60 Q 25,90 80,85",                   // L-Shape
-  "M 65,12 L 65,55 Q 65,90 40,90 Q 25,90 25,72",     // J-Shape (centered hook)
+  "M 80,20 C 12,20 12,82 78,82",                     // C-Shape (moderate arc)
+  "M 15,10 C 15,100 85,100 85,10",                   // U-Shape (moderate curve)
+  "M 10,10 C 45,110 55,110 90,10",                   // V-Shape (moderate peak)
+  "M 20,15 C 20,50 80,50 80,85",                     // Reverse C (moderate arc)
+  "M 50,10 C 80,10 80,50 50,50 C 20,50 20,90 50,90", // Double-curve S variant (moderate)
 ];
 // Path footprint fractions (screen-relative)
 const PATH_WIDTH_FRACTION = 0.80;  // 35% of screen width

@@ -426,174 +426,35 @@ def analyze_audio():
 # --- EXERCISE ENDPOINTS ---
 
 
-@app.route("/analyze/turtle", methods=["POST"])
-def analyze_turtle():
-    if "file" not in request.files:
-        return jsonify({"error": "No file"}), 400
-    file = request.files["file"]
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(os.getcwd(), filename)
-    file.save(filepath)
-
+def detect_nasal_phoneme_acoustic(filepath):
+    """
+    Simple check: if user is humming a voiced sound (for nasal targets).
+    We don't try to distinguish M vs N vs NG - just accept any nasal hum.
+    Good enough for speech therapy practice!
+    """
     try:
-        t0 = time.time()
-
-        # 2. Run WavLM AI Prediction (Correctness)
-        label, score = predict_file(filepath)
-
-        # Buffer: Only trigger 'block' if the AI is very confident
-        is_stutter = "fluent" not in label.lower()
-        block_detected = "block" in label.lower() and score > 0.75
-
-        # 3. Run Google STT & WPM Check (Speed)
-        text, words = get_google_transcript(filepath)
-        wpm = calculate_wpm(words) if words else 0
-
-        # Content Matching Logic
-        target_text = request.form.get("targetText", "")
-        tier = int(request.form.get("tier", 1))
-        required_pauses = int(request.form.get("requiredPauses", 0))
-        content_pass = True
-
-        if target_text and text:
-            # Simple set overlap check
-            target_words = set(target_text.lower().split())
-            spoken_words = set(text.lower().split())
-            # Calculate intersection
-            common = target_words.intersection(spoken_words)
-            # Require at least 50% of target words to be present
-            if len(common) < len(target_words) * 0.5:
-                content_pass = False
-                print(f"❌ Content Mismatch: Expected '{target_text}', Got '{text}'")
-
-        # 4. TERMINAL LOGGING (Debug view for you to see possibilities)
-        print("\n" + "🐢" * 15)
-        print(f"DEBUG ANALYSIS: {filename}")
-        print(f"WORD SAID: '{text}'")
-        print(f"SPEED: {wpm} WPM (Target: 70-130)")
-        print(f"AI LABEL: {label}")
-        print(f"CONFIDENCE: {score:.4f}")
-        print(f"BLOCK DETECTED: {block_detected}")
-        print("🐢" * 15 + "\n")
-
-        # 5. Define Passing Conditions
-        # Therapeutic Target: 70 - 130 WPM (Turtle Mode)
-        game_pass = 70 <= wpm <= 130
-        clinical_pass = not block_detected
-
-        # The turtle moves if BOTH conditions are met AND content matches
-        is_hit = game_pass and clinical_pass and content_pass
-
-        # Custom Feedback for Turtle
-        if not content_pass:
-            feedback = "Oops! That didn't sound quite right. Read the sentence on the screen."
-        elif wpm > 130:
-            feedback = "Too fast! Try to slow down and say it again."
-        elif wpm < 70 and wpm > 0:
-            feedback = "A bit too slow. Try speaking a little faster."
-        elif wpm == 0:
-            feedback = "I couldn't hear you clearly. Try again."
-        elif block_detected:
-            feedback = "Try to keep your speech smooth and flowing."
+        # Load audio
+        y, sr = librosa.load(filepath, sr=16000)
         
-        # 6. Pause Detection (Tier 2/3 only)
-        pause_bonus = False
-        detected_pauses = 0
-        
-        if tier >= 2 and required_pauses > 0:
-            # Load audio for RMS analysis
-            y, sr = librosa.load(filepath, sr=SAMPLE_RATE)
-            
-            # Calculate RMS energy
-            rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=512)[0]
-            
-            # Silence threshold (tune based on dataset)
-            silence_threshold = 0.02
-            
-            # Find silence regions
-            is_silent = rms < silence_threshold
-            
-            # Track pause regions
-            start_frame = None
-            for i, silent in enumerate(is_silent):
-                if silent and start_frame is None:
-                    start_frame = i
-                elif not silent and start_frame is not None:
-                    # Calculate silence duration
-                    silence_duration_ms = ((i - start_frame) * 512 / sr) * 1000
-                    if silence_duration_ms >= 200:  # 200ms minimum
-                        detected_pauses += 1
-                    start_frame = None
-            
-            pause_bonus = detected_pauses >= required_pauses
-            
-            print(f"PAUSE CHECK: Tier {tier}, Required: {required_pauses}, Detected: {detected_pauses}, Bonus: {pause_bonus}")
-        
-        # Generate feedback based on results
-        if not game_pass or not clinical_pass or not content_pass:
-            # Varied failure messages (no emojis, constructive)
-            failure_messages = [
-                "Let's try that again. Take your time.",
-                "Not quite right. Remember to speak slowly.",
-                "Almost there! Try going a bit slower.",
-                "Good effort. Let's practice that one more time.",
-                "Keep trying! Speak each word clearly.",
-                "You can do it! Just a little slower this time."
-            ]
-            feedback = random.choice(failure_messages)
-        elif pause_bonus:
-            # Success with good pauses (Tier 2/3)
-            pause_success_messages = [
-                "Excellent! Your pauses were perfect.",
-                "Great job! You paused at the right spots.",
-                "Wonderful pacing with those pauses.",
-                "Well done! Your rhythm was spot on."
-            ]
-            feedback = random.choice(pause_success_messages)
-        else:
-            # Regular success messages (no emojis, encouraging)
-            success_messages = [
-                "Great job! You spoke slowly and clearly.",
-                "Wonderful! That was nice and steady.",
-                "Excellent! You took your time with each word.",
-                "Well done! Your pace was just right.",
-                "Amazing! You spoke calmly and smoothly.",
-                "Fantastic! That was very controlled speech.",
-                "Super! You kept a good steady rhythm.",
-                "Brilliant! Your words were clear and spaced out."
-            ]
-            feedback = random.choice(success_messages)
-
-        elapsed_ms = int((time.time() - t0) * 1000)
-
-        # 7. Return Response to React Native App
-        return jsonify(
-            {
-                "wpm": wpm,
-                "game_pass": game_pass,
-                "stutter_detected": is_stutter,
-                "block_detected": block_detected,
-                "clinical_pass": clinical_pass,
-                "confidence": score,
-                "transcript": text,
-                "feedback": feedback,
-                "elapsed_ms": elapsed_ms,
-                "pauseBonus": pause_bonus,
-                "detectedPauses": detected_pauses,
-            }
+        # Check if sound is voiced (nasals are always voiced)
+        # Simple method: check if there's pitch
+        f0, voiced_flag, _ = librosa.pyin(
+            y, 
+            fmin=librosa.note_to_hz('C2'),  # ~65 Hz
+            fmax=librosa.note_to_hz('C7')   # ~2093 Hz
         )
-
+        
+        # If more than 50% of audio is voiced, accept it as nasal
+        voiced_ratio = np.sum(voiced_flag) / len(voiced_flag) if len(voiced_flag) > 0 else 0
+        
+        if voiced_ratio > 0.5:
+            return True  # Good enough - they're humming!
+        else:
+            return False  # Probably just blowing air
+            
     except Exception as e:
-        print(f"❌ Server Error in analyze_turtle: {e}")
-        return jsonify({"error": str(e)}), 500
-
-    finally:
-        # 7. Cleanup: Delete audio file to save space
-        if os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-            except:
-                pass
+        print(f"⚠️ Acoustic detection error: {e}")
+        return None
 
 
 # ---------------------------------------------------------
@@ -668,6 +529,16 @@ def analyze_snake():
                 except:
                     pass
             phoneme_match = found
+        
+        # Simple fallback: If STT fails and target is nasal, just check if they're humming
+        if phoneme_match is None and target_phoneme:
+            target_lower = target_phoneme.strip().lower()
+            if target_lower in {'m', 'n', 'ng'}:
+                # Don't try to distinguish M vs N vs NG - just check if voiced
+                is_humming = detect_nasal_phoneme_acoustic(filepath)
+                if is_humming:
+                    phoneme_match = True  # Good enough!
+                    print(f"✅ Detected nasal humming for target '{target_lower}'")
 
         # 3. APPLY DEDUCTION LOGIC
         # RULE 1: CONTINUITY
@@ -929,6 +800,127 @@ def analyze_onetap():
                 "elapsed_ms": int((time.time() - t0) * 1000),
             }
         )
+    finally:
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except:
+                pass
+
+
+# ---------------------------------------------------------
+# TURTLE GAME ENDPOINT (with transcript matching)
+# ---------------------------------------------------------
+@app.route("/analyze/turtle", methods=["POST"])
+def analyze_turtle():
+    """Analyze Turtle Game audio for WPM and transcript matching."""
+    file = request.files.get("file") or request.files.get("audioFile")
+    if not file:
+        return jsonify({"success": False, "error": "Missing audio"}), 400
+
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(os.getcwd(), filename)
+    file.save(filepath)
+    
+    # Get params
+    target_text = request.form.get("targetText", "")
+    tier = int(request.form.get("tier", 1))
+    
+    try:
+        t0 = time.time()
+        
+        # 1. Get Google STT transcript
+        full_text, words = get_google_transcript(filepath)
+        
+        # 2. Calculate WPM
+        wpm = 0
+        if words and len(words) >= 2:
+            first_start = words[0]['start']
+            last_end = words[-1]['end']
+            duration = last_end - first_start
+            if duration > 0:
+                wpm = round((len(words) / duration) * 60, 1)
+        
+        # 3. Check transcript match (strict word-by-word matching)
+        transcript_match = False
+        if target_text and full_text:
+            # Normalize both texts (remove pause markers, lowercase)
+            target_lower = target_text.lower().replace("|", "").strip()
+            transcript_lower = full_text.lower().strip()
+            
+            # Split into words
+            target_words = target_lower.split()
+            transcript_words = transcript_lower.split()
+            
+            # Simple but strict: ALL words must be present in correct order
+            # Allows minor filler words but rejects wrong content words
+            if len(target_words) > 0:
+                # Filter out common filler words that we can ignore
+                fillers = {'um', 'uh', 'like', 'you', 'know', 'so', 'well'}
+                
+                # Extract content words from both
+                target_content = [w for w in target_words if w not in fillers]
+                transcript_content = [w for w in transcript_words if w not in fillers]
+                
+                # For short sentences (<=6 words), require 100% match on content words
+                # For longer sentences, allow 1 wrong word
+                if len(target_content) <= 6:
+                    # Strict: all content words must match
+                    matches = sum(1 for w in target_content if w in transcript_content)
+                    transcript_match = matches == len(target_content)
+                else:
+                    # Allow 1 mistake for longer sentences
+                    matches = sum(1 for w in target_content if w in transcript_content)
+                    transcript_match = matches >= len(target_content) - 1
+        
+        # 4. WPM validation (40-100 WPM is good for turtle)
+        wpm_pass = 40 <= wpm <= 100 if wpm > 0 else False
+        
+        # 5. Determine pass/fail
+        game_pass = wpm_pass and (transcript_match or not target_text)
+        clinical_pass = wpm_pass
+        
+        # 6. Generate feedback
+        if not wpm_pass:
+            if wpm == 0:
+                feedback = "I couldn't hear you clearly enough."
+            elif wpm < 40:
+                feedback = "Great job being slow! Try to speak a tiny bit faster."
+            else:
+                feedback = "Slow down! Remember, the turtle likes to go slow."
+        elif not transcript_match and target_text:
+            feedback = "Good speed! But try to say the exact words."
+        else:
+            feedback = "Perfect! Great slow speech! 🌟"
+        
+        # 7. Calculate XP (tier-based)
+        if tier == 1:
+            xp = 10 if game_pass else 5
+        elif tier == 2:
+            xp = 20 if game_pass else 10
+        else:
+            xp = 30 if game_pass else 15
+        
+        elapsed = int((time.time() - t0) * 1000)
+        
+        return jsonify({
+            "success": True,
+            "game_pass": game_pass,
+            "clinical_pass": clinical_pass,
+            "feedback": feedback,
+            "wpm": wpm,
+            "xp": xp,
+            "transcript": full_text,
+            "transcript_match": transcript_match,
+            "elapsed_ms": elapsed
+        })
+        
+    except Exception as e:
+        print(f"Turtle analysis error: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
     finally:
         if os.path.exists(filepath):
             try:

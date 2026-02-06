@@ -36,7 +36,7 @@ export const SNAKE_CONFIG = {
    * Default: 2.0s
    * Related: Edge Cases, US4 Acceptance Scenario 2
    */
-  SLEEP_OVERLAY_DELAY: 1.0,
+  SLEEP_OVERLAY_DELAY: 2.0,
 
   /**
    * Maximum snake speed cap (as multiplier of base speed).
@@ -47,7 +47,7 @@ export const SNAKE_CONFIG = {
    * Default: 0.6 (60% of base speed, targets ~5 second completion at max volume)
    * Related: FR-003, FR-019
    */
-  V_MAX: 0.6,
+  V_MAX: 1.5,
 
   /**
    * Speed boost factor.
@@ -89,7 +89,7 @@ export const SNAKE_CONFIG = {
    * Timeout multiplier: level fails if not completed within (targetDuration * TIMEOUT_MULTIPLIER).
    * Related: Edge Cases
    */
-  TIMEOUT_MULTIPLIER: 1.0,
+  TIMEOUT_MULTIPLIER: 2.0,
 
   /**
    * Noise floor used to gate background hum; amplitudes below this are treated as 0

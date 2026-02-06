@@ -452,7 +452,7 @@ export default function SnakeGameScreen() {
               feedback={displayFeedback}
               xpReward={earnedXp ?? 10} 
               totalXp={analysisResult?.totalXp || 0} 
-              phonemeMatch={analysisResult?.aiResult?.metrics?.phoneme_match as boolean | undefined}
+              phonemeMatch={analysisResult?.aiResult?.metrics?.phonemeMatch as boolean | undefined}
               speechProb={analysisResult?.aiResult?.confidence ?? speechProb}
               voicedDetected={voicedDetected}
               speechThreshold={SNAKE_CONFIG.SPEECH_PROB_MIN}

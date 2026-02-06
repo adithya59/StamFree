@@ -240,7 +240,8 @@ export default function TalkingTurtle() {
           .replace(/[\uD800-\uDFFF]/g, '') 
           .replace(/[\u2600-\u27BF]/g, '')
           .replace(/\s+/g, ' ')
-          .trim()
+          .trim(),
+        { rate: 1.0 } // Normal speed for feedback
       );
       console.log(`[Turtle] WPM check failed: ${clientResult.wpm} WPM (${clientResult.status})`);
       return;
@@ -267,7 +268,8 @@ export default function TalkingTurtle() {
             .replace(/[\uD800-\uDFFF]/g, '')
             .replace(/[\u2600-\u27BF]/g, '')
             .replace(/\s+/g, ' ')
-            .trim()
+            .trim(),
+          { rate: 1.0 } // Normal speed for feedback
         );
 
         if (auth.currentUser && targetItem) {

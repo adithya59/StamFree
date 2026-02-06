@@ -161,7 +161,7 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
               : displayStars === 2
               ? '👏 Great!'
               : displayStars >= 1
-              ? '💪 Way To Go!'
+              ? '🔄 Try Again!'
               : '🎯 Complete!'}
           </Text>
 
