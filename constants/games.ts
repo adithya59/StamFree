@@ -32,6 +32,16 @@ export const GAMES: GameConfig[] = [
     route: '/exercises/snake-game',
   },
   {
+    id: 'tapping',
+    title: 'Rhythm Tap',
+    description: 'Tap out syllables & find your rhythm',
+    iconName: 'music-note',
+    lottieSource: require('@/assets/lottie/tapping.json'),
+    gradientColors: ['#ec4899', '#be185d'], // Pink-500 -> Pink-700
+    darkGradientColors: ['#9d174d', '#831843'], // Pink-800 -> Pink-900
+    route: '/exercises/tapping-game',
+  },
+  {
     id: 'onetap',
     title: 'Focus Owl',
     description: 'Think before you speak!',
@@ -69,5 +79,5 @@ export const GAMES: GameConfig[] = [
     gradientColors: ['#818cf8', '#4338ca'], // Indigo-400 -> Indigo-700
     darkGradientColors: ['#3730a3', '#312e81'], // Indigo-800 -> Indigo-900
     route: '/exercises/breathing-exercises',
-  },
+  }
 ];
