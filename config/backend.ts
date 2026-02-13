@@ -1,8 +1,8 @@
 // Backend configuration
 // Prefer Expo public env override, then legacy REACT_APP_ fallback, else Cloud Run default.
 const BACKEND_BASE_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL ||
-  process.env.EXPO_PUBLIC_REACT_APP_BACKEND_URL ||
+  // process.env.EXPO_PUBLIC_BACKEND_URL ||
+  // process.env.EXPO_PUBLIC_REACT_APP_BACKEND_URL ||
   'https://stamfree-api-101158410052.us-central1.run.app';
 
 // Centralized route map for clarity and reuse
