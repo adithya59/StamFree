@@ -10,6 +10,8 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useRef, useState } from 'react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '@/config/firebaseConfig';
 import {
     ActivityIndicator,
     Animated,
@@ -64,7 +66,33 @@ export default function TappingGameScreen() {
     } = useTappingSession();
 
     const [currentWordIndex, setCurrentWordIndex] = useState(0);
+    const [loadingProgress, setLoadingProgress] = useState(true);
     const [woodpeckerState, setWoodpeckerState] = useState<'idle' | 'peck' | 'success' | 'confused'>('idle');
+
+    // Fetch saved progress on mount
+    useEffect(() => {
+        const fetchProgress = async () => {
+            if (!auth.currentUser) {
+                setLoadingProgress(false);
+                return;
+            }
+            try {
+                const docRef = doc(db, `users/${auth.currentUser.uid}/games/onetap`);
+                const snap = await getDoc(docRef);
+                if (snap.exists()) {
+                    const data = snap.data();
+                    if (data.currentIndex !== undefined && data.currentIndex < PRACTICE_WORDS.length) {
+                        setCurrentWordIndex(data.currentIndex);
+                    }
+                }
+            } catch (e) {
+                console.error('Error fetching one-tap progress:', e);
+            } finally {
+                setLoadingProgress(false);
+            }
+        };
+        fetchProgress();
+    }, []);
 
     // UI Animations
     const syllableScales = useRef<Animated.Value[]>([]).current;
@@ -120,17 +148,30 @@ export default function TappingGameScreen() {
 
     const handleStop = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        stopSession(currentWord.word, currentWord.syllables);
+        stopSession(currentWord.word, currentWord.syllables, currentWord.tier || 1);
     };
 
-    const handleNextWord = () => {
+    const handleNextWord = async () => {
         reset();
+        let nextIndex = 0;
         if (currentWordIndex < PRACTICE_WORDS.length - 1) {
-            setCurrentWordIndex(prev => prev + 1);
+            nextIndex = currentWordIndex + 1;
         } else {
-            setCurrentWordIndex(0); // Loop back
+            nextIndex = 0; // Loop back
         }
+
+        setCurrentWordIndex(nextIndex);
         setWoodpeckerState('idle');
+
+        // Save progress
+        if (auth.currentUser) {
+            try {
+                const docRef = doc(db, `users/${auth.currentUser.uid}/games/onetap`);
+                await setDoc(docRef, { currentIndex: nextIndex }, { merge: true });
+            } catch (e) {
+                console.error('Error saving progress:', e);
+            }
+        }
     };
 
     const handleSpeak = () => {
@@ -153,153 +194,161 @@ export default function TappingGameScreen() {
             resizeMode="cover"
         >
             <SafeAreaView style={styles.safeArea}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <MaterialCommunityIcons name="arrow-left" size={24} color="#2E5077" />
-                    </TouchableOpacity>
-                    <View style={styles.headerBadge}>
-                        <Text style={styles.title}>Rhythm Adventure</Text>
+                {loadingProgress ? (
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                        <ActivityIndicator size="large" color="#4CAF50" />
+                        <Text style={{ marginTop: 10, color: '#2E5077' }}>Loading Level...</Text>
                     </View>
-                    <View style={{ width: 40 }} />
-                </View>
-
-                {/* Main Content */}
-                <ScrollView contentContainerStyle={styles.scrollContent}>
-
-                    {/* Character Scene */}
-                    <View style={styles.sceneContainer}>
-                        <Woodpecker state={woodpeckerState} />
-                    </View>
-
-                    {/* Word Display Area */}
-                    <View style={styles.wordCard}>
-                        {!isRecording && !lastResult && !isProcessing && (
-                            <Text style={styles.promptText}>Tap START and say:</Text>
-                        )}
-
-                        <View style={styles.syllableContainer}>
-                            {currentWord.syllables.map((syllable, index) => (
-                                <View key={index} style={styles.syllableWrapper}>
-                                    <TouchableOpacity
-                                        onPress={() => handleSyllableTap(index)}
-                                        activeOpacity={isRecording ? 0.7 : 1}
-                                        disabled={!isRecording}
-                                    >
-                                        <Animated.View
-                                            style={[
-                                                styles.syllableButton,
-                                                // Dynamic Styling
-                                                isRecording
-                                                    ? styles.syllableActive
-                                                    : lastResult
-                                                        ? (lastResult.syllable_matches?.[index] ? styles.syllableCorrect : styles.syllableIncorrect)
-                                                        : styles.syllableInactive,
-
-                                                // Highlight tapped syllables if recording
-                                                isRecording && index < taps.length && styles.syllableTapped,
-                                                { transform: [{ scale: syllableScales[index] || 1 }] }
-                                            ]}
-                                        >
-                                            <Text style={[
-                                                styles.syllableText,
-                                                isRecording
-                                                    ? styles.textActive
-                                                    : lastResult
-                                                        ? (lastResult.syllable_matches?.[index] ? styles.textCorrect : styles.textIncorrect)
-                                                        : styles.textInactive
-                                            ]}>
-                                                {syllable}
-                                            </Text>
-                                        </Animated.View>
-                                    </TouchableOpacity>
-                                    <Text style={styles.tapIndicator}>
-                                        {isRecording && index < taps.length ? '✓' : ''}
-                                        {lastResult && (lastResult.syllable_matches?.[index] ? '✅' : '❌')}
-                                    </Text>
-                                </View>
-                            ))}
-                        </View>
-
-                        {/* Full Word Label */}
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
-                            <Text style={styles.fullWordText}>{currentWord.word}</Text>
-                            <TouchableOpacity
-                                onPress={handleSpeak}
-                                style={styles.speakerButton}
-                            >
-                                <MaterialCommunityIcons name="volume-high" size={26} color="#009688" />
+                ) : (
+                    <>
+                        {/* Header */}
+                        <View style={styles.header}>
+                            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                                <MaterialCommunityIcons name="arrow-left" size={24} color="#2E5077" />
                             </TouchableOpacity>
+                            <View style={styles.headerBadge}>
+                                <Text style={styles.title}>Rhythm Adventure</Text>
+                            </View>
+                            <View style={{ width: 40 }} />
                         </View>
-                    </View>
 
-                    {/* Feedback Area */}
-                    {lastResult && (
-                        <View style={styles.resultCard}>
-                            <Text style={styles.resultTitle}>
-                                {lastResult.accuracy > 0.7 ? '🎉 Great Job!' : '👍 Good Try!'}
-                            </Text>
-                            <Text style={styles.feedbackText}>{lastResult.feedback}</Text>
+                        {/* Main Content */}
+                        <ScrollView contentContainerStyle={styles.scrollContent}>
 
-                            <View style={styles.statsRow}>
-                                <View style={styles.stat}>
-                                    <Text style={styles.statLabel}>Sync</Text>
-                                    <MaterialCommunityIcons
-                                        name={lastResult.is_sync ? "check-circle" : "alert-circle"}
-                                        size={24}
-                                        color={lastResult.is_sync ? "#4CAF50" : "#FF9800"}
-                                    />
+                            {/* Character Scene */}
+                            <View style={styles.sceneContainer}>
+                                <Woodpecker state={woodpeckerState} />
+                            </View>
+
+                            {/* Word Display Area */}
+                            <View style={styles.wordCard}>
+                                {!isRecording && !lastResult && !isProcessing && (
+                                    <Text style={styles.promptText}>Tap START and say:</Text>
+                                )}
+
+                                <View style={styles.syllableContainer}>
+                                    {currentWord.syllables.map((syllable, index) => (
+                                        <View key={index} style={styles.syllableWrapper}>
+                                            <TouchableOpacity
+                                                onPress={() => handleSyllableTap(index)}
+                                                activeOpacity={isRecording ? 0.7 : 1}
+                                                disabled={!isRecording}
+                                            >
+                                                <Animated.View
+                                                    style={[
+                                                        styles.syllableButton,
+                                                        // Dynamic Styling
+                                                        isRecording
+                                                            ? styles.syllableActive
+                                                            : lastResult
+                                                                ? (lastResult.syllable_matches?.[index] ? styles.syllableCorrect : styles.syllableIncorrect)
+                                                                : styles.syllableInactive,
+
+                                                        // Highlight tapped syllables if recording
+                                                        isRecording && index < taps.length && styles.syllableTapped,
+                                                        { transform: [{ scale: syllableScales[index] || 1 }] }
+                                                    ]}
+                                                >
+                                                    <Text style={[
+                                                        styles.syllableText,
+                                                        isRecording
+                                                            ? styles.textActive
+                                                            : lastResult
+                                                                ? (lastResult.syllable_matches?.[index] ? styles.textCorrect : styles.textIncorrect)
+                                                                : styles.textInactive
+                                                    ]}>
+                                                        {syllable}
+                                                    </Text>
+                                                </Animated.View>
+                                            </TouchableOpacity>
+                                            <Text style={styles.tapIndicator}>
+                                                {isRecording && index < taps.length ? '✓' : ''}
+                                                {lastResult && (lastResult.syllable_matches?.[index] ? '✅' : '❌')}
+                                            </Text>
+                                        </View>
+                                    ))}
                                 </View>
-                                <View style={styles.stat}>
-                                    <Text style={styles.statLabel}>Fluency</Text>
-                                    <MaterialCommunityIcons
-                                        name={lastResult.fluent ? "check-circle" : "check"}
-                                        size={24}
-                                        color={lastResult.fluent ? "#4CAF50" : "#999"}
-                                    />
+
+                                {/* Full Word Label */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+                                    <Text style={styles.fullWordText}>{currentWord.word}</Text>
+                                    <TouchableOpacity
+                                        onPress={handleSpeak}
+                                        style={styles.speakerButton}
+                                    >
+                                        <MaterialCommunityIcons name="volume-high" size={26} color="#009688" />
+                                    </TouchableOpacity>
                                 </View>
                             </View>
 
-                            <TouchableOpacity style={styles.nextButton} onPress={handleNextWord}>
-                                <Text style={styles.nextButtonText}>Next Word ➜</Text>
-                            </TouchableOpacity>
+                            {/* Feedback Area */}
+                            {lastResult && (
+                                <View style={styles.resultCard}>
+                                    <Text style={styles.resultTitle}>
+                                        {lastResult.accuracy > 0.7 ? '🎉 Great Job!' : '👍 Good Try!'}
+                                    </Text>
+                                    <Text style={styles.feedbackText}>{lastResult.feedback}</Text>
+
+                                    <View style={styles.statsRow}>
+                                        <View style={styles.stat}>
+                                            <Text style={styles.statLabel}>Sync</Text>
+                                            <MaterialCommunityIcons
+                                                name={lastResult.is_sync ? "check-circle" : "alert-circle"}
+                                                size={24}
+                                                color={lastResult.is_sync ? "#4CAF50" : "#FF9800"}
+                                            />
+                                        </View>
+                                        <View style={styles.stat}>
+                                            <Text style={styles.statLabel}>Fluency</Text>
+                                            <MaterialCommunityIcons
+                                                name={lastResult.fluent ? "check-circle" : "check"}
+                                                size={24}
+                                                color={lastResult.fluent ? "#4CAF50" : "#999"}
+                                            />
+                                        </View>
+                                    </View>
+
+                                    <TouchableOpacity style={styles.nextButton} onPress={handleNextWord}>
+                                        <Text style={styles.nextButtonText}>Next Word ➜</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
+                            {/* Error Display */}
+                            {error && (
+                                <View style={styles.errorContainer}>
+                                    <Text style={styles.errorText}>{error}</Text>
+                                    <TouchableOpacity onPress={handleStart}>
+                                        <Text style={{ color: 'blue', marginTop: 5 }}>Try Again</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
+                        </ScrollView>
+
+                        {/* Bottom Controls */}
+                        <View style={styles.controls}>
+                            {isProcessing ? (
+                                <View style={styles.loadingContainer}>
+                                    <ActivityIndicator size="large" color="#4CAF50" />
+                                    <Text style={styles.statusText}>Pecky is listening...</Text>
+                                </View>
+                            ) : isRecording ? (
+                                <TouchableOpacity onPress={handleStop} style={styles.stopButton}>
+                                    <Text style={styles.stopButtonText}>I'm Done ✅</Text>
+                                </TouchableOpacity>
+                            ) : !lastResult ? (
+                                <TouchableOpacity onPress={handleStart} style={styles.startButton}>
+                                    <Text style={styles.startButtonText}>START</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <TouchableOpacity onPress={reset} style={styles.retryButton}>
+                                    <Text style={styles.retryButtonText}>Try Again ↻</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
-                    )}
-
-                    {/* Error Display */}
-                    {error && (
-                        <View style={styles.errorContainer}>
-                            <Text style={styles.errorText}>{error}</Text>
-                            <TouchableOpacity onPress={handleStart}>
-                                <Text style={{ color: 'blue', marginTop: 5 }}>Try Again</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-
-                </ScrollView>
-
-                {/* Bottom Controls */}
-                <View style={styles.controls}>
-                    {isProcessing ? (
-                        <View style={styles.loadingContainer}>
-                            <ActivityIndicator size="large" color="#4CAF50" />
-                            <Text style={styles.statusText}>Pecky is listening...</Text>
-                        </View>
-                    ) : isRecording ? (
-                        <TouchableOpacity onPress={handleStop} style={styles.stopButton}>
-                            <Text style={styles.stopButtonText}>I'm Done ✅</Text>
-                        </TouchableOpacity>
-                    ) : !lastResult ? (
-                        <TouchableOpacity onPress={handleStart} style={styles.startButton}>
-                            <Text style={styles.startButtonText}>START</Text>
-                        </TouchableOpacity>
-                    ) : (
-                        <TouchableOpacity onPress={reset} style={styles.retryButton}>
-                            <Text style={styles.retryButtonText}>Try Again ↻</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-
+                    </>
+                )}
             </SafeAreaView>
         </ImageBackground>
     );

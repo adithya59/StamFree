@@ -1,7 +1,10 @@
 /**
  * One-Tap Content Seeding
- * Syllable-based words for impulse control and motor planning
- * Tier system: 2-syl (Tier 1), 3-syl (Tier 2), 4+ syl (Tier 3)
+ * Syllable-based words and sentences for impulse control and motor planning
+ * Tier system:
+ * - Tier 1: Common Words (2-3 syllables)
+ * - Tier 2: Short Sentences (3-5 syllables)
+ * - Tier 3: Complex Sentences (6+ syllables)
  */
 
 export interface OneTapContentItem {
@@ -9,14 +12,14 @@ export interface OneTapContentItem {
   text: string;
   syllables: string[];
   tier: 1 | 2 | 3;
-  category: 'animals' | 'food' | 'objects' | 'places' | 'actions';
+  category: 'animals' | 'food' | 'objects' | 'places' | 'actions' | 'sentences';
   ipa?: string;
-  imageKeyword?: string; // Optional override for asset search (e.g., "Baby Boy" instead of "Baby")
-  ttsSyllables?: string[]; // Optional phonetic syllables for TTS (e.g., "Tie", "Gur" instead of "Ti", "ger")
+  imageKeyword?: string; // Optional override for asset search
+  ttsSyllables?: string[]; // Optional phonetic syllables for TTS
 }
 
 export const oneTapPool: OneTapContentItem[] = [
-  // TIER 1: The Two-Step (2 Syllables)
+  // --- TIER 1: Common Words (4 Items) ---
   {
     id: 'monkey',
     text: 'Monkey',
@@ -28,179 +31,191 @@ export const oneTapPool: OneTapContentItem[] = [
   {
     id: 'apple',
     text: 'Apple',
-    syllables: ['App', 'le'],
+    syllables: ['Ap', 'ple'],
     tier: 1,
     category: 'food',
     ipa: 'ˈæpəl'
   },
   {
-    id: 'tiger',
-    text: 'Tiger',
-    syllables: ['Ti', 'ger'],
-    tier: 1,
-    category: 'animals',
-    ipa: 'ˈtaɪɡər',
-    ttsSyllables: ['Tie', 'Gur'] // Force correct pronunciation
-  },
-  {
-    id: 'baby',
-    text: 'Baby',
-    syllables: ['Ba', 'by'],
-    tier: 1,
-    category: 'objects',
-    ipa: 'ˈbeɪbi',
-    imageKeyword: 'Baby Face' // Better search term for cute baby illustrations
-  },
-  {
-    id: 'pizza',
-    text: 'Pizza',
-    syllables: ['Piz', 'za'],
+    id: 'water',
+    text: 'Water',
+    syllables: ['Wa', 'ter'],
     tier: 1,
     category: 'food',
-    ipa: 'ˈpiːtsə'
+    ipa: 'ˈwɔːtər'
   },
   {
-    id: 'cookie',
-    text: 'Cookie',
-    syllables: ['Cook', 'ie'],
+    id: 'happy',
+    text: 'Happy',
+    syllables: ['Hap', 'py'],
     tier: 1,
-    category: 'food',
-    ipa: 'ˈkʊki'
-  },
-  {
-    id: 'bunny',
-    text: 'Bunny',
-    syllables: ['Bun', 'ny'],
-    tier: 1,
-    category: 'animals',
-    ipa: 'ˈbʌni',
-    imageKeyword: 'Cute Rabbit'
-  },
-  {
-    id: 'puppy',
-    text: 'Puppy',
-    syllables: ['Pup', 'py'],
-    tier: 1,
-    category: 'animals',
-    ipa: 'ˈpʌpi'
+    category: 'actions',
+    ipa: 'ˈhæpi'
   },
 
-  // TIER 2: The Tri-Step (3 Syllables)
+  // --- TIER 2: Short Sentences (8 Items) ---
   {
-    id: 'pineapple',
-    text: 'Pineapple',
-    syllables: ['Pine', 'ap', 'ple'],
+    id: 'i-like-it',
+    text: 'I like it',
+    syllables: ['I', 'like', 'it'],
     tier: 2,
-    category: 'food',
-    ipa: 'ˈpaɪnˌæpəl'
+    category: 'sentences',
+    ipa: 'aɪ laɪk ɪt'
   },
   {
-    id: 'elephant',
-    text: 'Elephant',
-    syllables: ['El', 'e', 'phant'],
+    id: 'see-the-dog',
+    text: 'See the dog',
+    syllables: ['See', 'the', 'dog'],
     tier: 2,
-    category: 'animals',
-    ipa: 'ˈɛləfənt'
+    category: 'sentences',
+    ipa: 'si ðə dɔɡ'
   },
   {
-    id: 'butterfly',
-    text: 'Butterfly',
-    syllables: ['But', 'ter', 'fly'],
+    id: 'red-big-ball',
+    text: 'Red big ball',
+    syllables: ['Red', 'big', 'ball'],
     tier: 2,
-    category: 'animals',
-    ipa: 'ˈbʌtərflaɪ',
-    imageKeyword: 'Colorful Butterfly'
+    category: 'sentences',
+    ipa: 'rɛd bɪɡ bɔl'
   },
   {
-    id: 'computer',
-    text: 'Computer',
-    syllables: ['Com', 'pu', 'ter'],
+    id: 'time-to-go',
+    text: 'Time to go',
+    syllables: ['Time', 'to', 'go'],
     tier: 2,
-    category: 'objects',
-    ipa: 'kəmˈpjuːtər'
+    category: 'sentences',
+    ipa: 'taɪm tu ɡoʊ'
   },
   {
-    id: 'kangaroo',
-    text: 'Kangaroo',
-    syllables: ['Kan', 'ga', 'roo'],
+    id: 'open-the-door',
+    text: 'Open the door',
+    syllables: ['O', 'pen', 'the', 'door'],
     tier: 2,
-    category: 'animals',
-    ipa: 'ˌkæŋɡəˈruː'
+    category: 'sentences',
+    ipa: 'ˈoʊpən ðə dɔr'
   },
   {
-    id: 'hamburger',
-    text: 'Hamburger',
-    syllables: ['Ham', 'bur', 'ger'],
+    id: 'hello-my-friend',
+    text: 'Hello my friend',
+    syllables: ['Hel', 'lo', 'my', 'friend'],
     tier: 2,
-    category: 'food',
-    ipa: 'ˈhæmbɜrɡər'
+    category: 'sentences',
+    ipa: 'hɛˈloʊ maɪ frɛnd'
   },
   {
-    id: 'spaghetti',
-    text: 'Spaghetti',
-    syllables: ['Spa', 'ghet', 'ti'],
+    id: 'look-at-that',
+    text: 'Look at that',
+    syllables: ['Look', 'at', 'that'],
     tier: 2,
-    category: 'food',
-    ipa: 'spəˈɡɛti'
+    category: 'sentences',
+    ipa: 'lʊk æt ðæt'
   },
   {
-    id: 'strawberry',
-    text: 'Strawberry',
-    syllables: ['Straw', 'ber', 'ry'],
+    id: 'sun-is-hot',
+    text: 'Sun is hot',
+    syllables: ['Sun', 'is', 'hot'],
     tier: 2,
-    category: 'food',
-    ipa: 'ˈstrɔbɛri'
+    category: 'sentences',
+    ipa: 'sʌn ɪz hɑt'
   },
 
-  // TIER 3: The Complex (4+ Syllables)
+  // --- TIER 3: Complex Sentences (12 Items) ---
   {
-    id: 'watermelon',
-    text: 'Watermelon',
-    syllables: ['Wa', 'ter', 'mel', 'on'],
+    id: 'the-sun-is-shining',
+    text: 'The sun is shining',
+    syllables: ['The', 'sun', 'is', 'shi', 'ning'],
     tier: 3,
-    category: 'food',
-    ipa: 'ˈwɔtərˌmɛlən'
+    category: 'sentences',
+    ipa: 'ðə sʌn ɪz ˈʃaɪnɪŋ'
   },
   {
-    id: 'caterpillar',
-    text: 'Caterpillar',
-    syllables: ['Cat', 'er', 'pil', 'lar'],
+    id: 'we-play-in-the-park',
+    text: 'We play in the park',
+    syllables: ['We', 'play', 'in', 'the', 'park'],
     tier: 3,
-    category: 'animals',
-    ipa: 'ˈkætərˌpɪlər'
+    category: 'sentences',
+    ipa: 'wi pleɪ ɪn ðə pɑrk'
   },
   {
-    id: 'helicopter',
-    text: 'Helicopter',
-    syllables: ['Hel', 'i', 'cop', 'ter'],
+    id: 'can-we-go-outside',
+    text: 'Can we go outside',
+    syllables: ['Can', 'we', 'go', 'out', 'side'],
     tier: 3,
-    category: 'objects',
-    ipa: 'ˈhɛlɪˌkɑptər'
+    category: 'sentences',
+    ipa: 'kæn wi ɡoʊ ˌaʊtˈsaɪd'
   },
   {
-    id: 'alligator',
-    text: 'Alligator',
-    syllables: ['Al', 'li', 'ga', 'tor'],
+    id: 'birds-fly-in-the-sky',
+    text: 'Birds fly in the sky',
+    syllables: ['Birds', 'fly', 'in', 'the', 'sky'],
     tier: 3,
-    category: 'animals',
-    ipa: 'ˈælɪɡeɪtər'
+    category: 'sentences',
+    ipa: 'bɜrdz flaɪ ɪn ðə skaɪ'
   },
   {
-    id: 'avocado',
-    text: 'Avocado',
-    syllables: ['Av', 'o', 'ca', 'do'],
+    id: 'i-want-apple-juice',
+    text: 'I want apple juice',
+    syllables: ['I', 'want', 'ap', 'ple', 'juice'],
     tier: 3,
-    category: 'food',
-    ipa: 'ˌævəˈkɑdoʊ'
+    category: 'sentences',
+    ipa: 'aɪ wɑnt ˈæpəl dʒus'
   },
   {
-    id: 'television',
-    text: 'Television',
-    syllables: ['Tel', 'e', 'vi', 'sion'],
+    id: 'where-is-my-blue-shoe',
+    text: 'Where is my blue shoe',
+    syllables: ['Where', 'is', 'my', 'blue', 'shoe'],
     tier: 3,
-    category: 'objects',
-    ipa: 'ˈtɛləˌvɪʒən'
+    category: 'sentences',
+    ipa: 'wɛr ɪz maɪ blu ʃu'
   },
+  {
+    id: 'reading-is-really-fun',
+    text: 'Reading is really fun',
+    syllables: ['Read', 'ing', 'is', 'real', 'ly', 'fun'],
+    tier: 3,
+    category: 'sentences',
+    ipa: 'ˈridɪŋ ɪz ˈrɪəli fʌn'
+  },
+  {
+    id: 'the-cat-sleeps-all-day',
+    text: 'The cat sleeps all day',
+    syllables: ['The', 'cat', 'sleeps', 'all', 'day'],
+    tier: 3,
+    category: 'sentences',
+    ipa: 'ðə kæt slips ɔl deɪ'
+  },
+  {
+    id: 'let-us-bake-some-cake',
+    text: 'Let us bake some cake',
+    syllables: ['Let', 'us', 'bake', 'some', 'cake'],
+    tier: 3,
+    category: 'sentences',
+    ipa: 'lɛt ʌs beɪk sʌm keɪk'
+  },
+  {
+    id: 'my-bag-is-very-heavy',
+    text: 'My bag is very heavy',
+    syllables: ['My', 'bag', 'is', 'ver', 'y', 'heav', 'y'],
+    tier: 3,
+    category: 'sentences',
+    ipa: 'maɪ bæɡ ɪz ˈvɛri ˈhɛvi'
+  },
+  {
+    id: 'today-is-a-good-day',
+    text: 'Today is a good day',
+    syllables: ['To', 'day', 'is', 'a', 'good', 'day'],
+    tier: 3,
+    category: 'sentences',
+    ipa: 'təˈdeɪ ɪz ə ɡʊd deɪ'
+  },
+  {
+    id: 'please-pass-the-water',
+    text: 'Please pass the water',
+    syllables: ['Please', 'pass', 'the', 'wa', 'ter'],
+    tier: 3,
+    category: 'sentences',
+    ipa: 'pliz pæs ðə ˈwɔtər'
+  }
 ];
 
 /**
