@@ -8,7 +8,6 @@ import {
   Text,
   View,
   TouchableOpacity,
-  Modal
 } from 'react-native';
 import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
 import { H1, H2, Label, P } from '@/components/ui/Typography';
@@ -492,8 +491,6 @@ export default function ProgressScreen() {
             </View>
           </View>
         </View>
-
-        {/* Coming Soon Section */}
 
       </ScrollView>
     </ScreenWrapper>

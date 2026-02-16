@@ -16,7 +16,6 @@ import {
     ActivityIndicator,
     Animated,
     Dimensions,
-    Image,
     ImageBackground,
     StyleSheet,
     Text,
