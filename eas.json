@@ -6,6 +6,14 @@
     "preview": {
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyDzPNXphncESdVlt8fwSeFyQfifc73P9zg",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "stamfree-390cd.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "stamfree-390cd",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "stamfree-390cd.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "101158410052",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:101158410052:web:d16bedcea5af6dfccd6911"
       }
     },
     "production": {}
