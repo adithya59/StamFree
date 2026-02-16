@@ -14,43 +14,47 @@ import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
 
+// Adjusted for 6-12 year olds (3 seconds per phase)
+const INHALE_DURATION = 3000;
+const EXHALE_DURATION = 3000;
+
 export default function BreathingBalloonScreen() {
-  const [phase, setPhase] = useState<'idle' | 'inhale' | 'exhale' | 'speak'>('idle');
-  const [feedback, setFeedback] = useState('Get ready to breathe with the balloon! 🎈');
-  const [hasBreathed, setHasBreathed] = useState(false);
+  const [phase, setPhase] = useState<'idle' | 'inhale' | 'exhale' | 'approval'>('idle');
+  const [feedback, setFeedback] = useState('Parents: Please watch your child breathe. 🎈');
+  const [hasCompleatedCycle, setHasCompleatedCycle] = useState(false);
 
   // Animation values
   const balloonScale = useRef(new Animated.Value(1)).current;
   const balloonOpacity = useRef(new Animated.Value(1)).current;
 
   const startBreathing = () => {
-    setHasBreathed(false);
+    setHasCompleatedCycle(false);
     runBreathingCycle();
   };
 
   const runBreathingCycle = () => {
     setPhase('inhale');
-    setFeedback('Breathe in slowly... 🌬️');
+    setFeedback('Breathe in slowly (nose)... 🌬️');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     Animated.timing(balloonScale, {
       toValue: 2.5,
-      duration: 4000,
+      duration: INHALE_DURATION,
       useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished) {
         setPhase('exhale');
-        setFeedback('Now, breathe out gently... 😌');
-        
+        setFeedback('Now, breathe out gently (mouth)... 😌');
+
         Animated.timing(balloonScale, {
           toValue: 1.2,
-          duration: 4000,
+          duration: EXHALE_DURATION,
           useNativeDriver: true,
         }).start(({ finished: exhaled }) => {
           if (exhaled) {
-            setPhase('speak');
-            setFeedback('Great breath! Now say "POP"! 💥');
-            setHasBreathed(true);
+            setPhase('approval');
+            setFeedback('Parents: Did they do it correctly?');
+            setHasCompleatedCycle(true);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
         });
@@ -58,43 +62,44 @@ export default function BreathingBalloonScreen() {
     });
   };
 
-  const handleSpeak = () => {
-    if (!hasBreathed) {
-      setFeedback('Wait! Take a deep breath first. 🎈');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      return;
-    }
+  const handleParentApproval = (approved: boolean) => {
+    if (approved) {
+      // Success - Pop the balloon
+      setFeedback('POP! wonderful! 🌟');
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-    // Simulate speech detection
-    setFeedback('POP! Wonderful! 🌟');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    
-    // Balloon "pops" or resets
-    Animated.sequence([
-      Animated.timing(balloonScale, {
-        toValue: 3,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(balloonOpacity, {
-        toValue: 0,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      setTimeout(() => {
-        balloonScale.setValue(1);
-        balloonOpacity.setValue(1);
-        setPhase('idle');
-        setHasBreathed(false);
-        setFeedback('Want to try again? 🎈');
-      }, 1000);
-    });
+      // Balloon "pops"
+      Animated.sequence([
+        Animated.timing(balloonScale, {
+          toValue: 3,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(balloonOpacity, {
+          toValue: 0,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setTimeout(() => {
+          // Reset
+          balloonScale.setValue(1);
+          balloonOpacity.setValue(1);
+          setPhase('idle');
+          setFeedback('Great Job! Ready for another? 🎈');
+        }, 1500);
+      });
+    } else {
+      // Retry - Reset without pop
+      setFeedback('Let\'s try together again! 🔄');
+      balloonScale.setValue(1);
+      setPhase('idle');
+    }
   };
 
   return (
-    <ImageBackground 
-      source={require('../../assets/images/sky.jpg')} 
+    <ImageBackground
+      source={require('../../assets/images/sky.jpg')}
       style={styles.container}
     >
       <View style={styles.overlay}>
@@ -102,16 +107,16 @@ export default function BreathingBalloonScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={28} color="white" />
           </TouchableOpacity>
-          <Text style={styles.title}>Breathing Balloon</Text>
+          <Text style={styles.title}>Zen Breath</Text>
           <View style={{ width: 28 }} />
         </View>
 
         <View style={styles.gameArea}>
           <Animated.View style={[
             styles.balloonContainer,
-            { 
+            {
               transform: [{ scale: balloonScale }],
-              opacity: balloonOpacity 
+              opacity: balloonOpacity
             }
           ]}>
             <View style={styles.balloon}>
@@ -132,18 +137,30 @@ export default function BreathingBalloonScreen() {
                 <Ionicons name="play" size={32} color="white" />
                 <Text style={styles.buttonText}>START</Text>
               </TouchableOpacity>
+            ) : phase === 'approval' ? (
+              <View style={styles.approvalButtons}>
+                <TouchableOpacity
+                  style={[styles.approvalButton, styles.retryButton]}
+                  onPress={() => handleParentApproval(false)}
+                >
+                  <Ionicons name="refresh" size={24} color="white" />
+                  <Text style={styles.buttonText}>Try Again</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.approvalButton, styles.successButton]}
+                  onPress={() => handleParentApproval(true)}
+                >
+                  <Ionicons name="checkmark-circle" size={24} color="white" />
+                  <Text style={styles.buttonText}>Good Job!</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
-              <TouchableOpacity 
-                style={[
-                  styles.speakButton, 
-                  !hasBreathed && styles.buttonDisabled
-                ]} 
-                onPress={handleSpeak}
-                disabled={phase !== 'speak'}
-              >
-                <Ionicons name="mic" size={40} color="white" />
-                <Text style={styles.buttonText}>SAY POP</Text>
-              </TouchableOpacity>
+              <View style={styles.breathingIndicator}>
+                <Text style={styles.breathingText}>
+                  {phase === 'inhale' ? 'Inhaling...' : 'Exhaling...'}
+                </Text>
+              </View>
             )}
           </View>
         </View>
@@ -230,6 +247,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     width: '100%',
+    minHeight: 80, // Reserve space for buttons
+    alignItems: 'center',
   },
   startButton: {
     backgroundColor: '#4CAF50',
@@ -239,19 +258,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     borderRadius: 30,
     gap: 10,
+    elevation: 5,
   },
-  speakButton: {
-    backgroundColor: '#FF9800',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: 'center',
+  approvalButtons: {
+    flexDirection: 'row',
+    gap: 20,
+  },
+  approvalButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    elevation: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    gap: 8,
+    elevation: 3,
   },
-  buttonDisabled: {
-    backgroundColor: '#9E9E9E',
-    elevation: 0,
+  retryButton: {
+    backgroundColor: '#FF9800',
+  },
+  successButton: {
+    backgroundColor: '#4CAF50',
+  },
+  breathingIndicator: {
+    padding: 15,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+  },
+  breathingText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   buttonText: {
     color: 'white',
