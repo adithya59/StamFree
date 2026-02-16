@@ -35,7 +35,7 @@ export default function TalkingTurtle() {
   const [totalXP, setTotalXP] = useState(0); // Total accumulated XP from Firebase
   const [showLapModal, setShowLapModal] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false); // NEW: TTS state
-  
+
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -50,7 +50,7 @@ export default function TalkingTurtle() {
   const [masteredSentences, setMasteredSentences] = useState<string[]>([]);
   const [activeSentences, setActiveSentences] = useState<string[]>([]);
   const [lockedSentences, setLockedSentences] = useState<string[]>([]);
-  
+
   // Progress Bar Width
   const progressAnim = useRef(new Animated.Value(0)).current;
 
@@ -68,13 +68,13 @@ export default function TalkingTurtle() {
           ];
           setSessionContent([dummyDeck, dummyDeck, dummyDeck]);
         }
-        
+
         // Load user's total XP from Firebase
         const { doc, getDoc } = await import('firebase/firestore');
         const { db } = await import('@/config/firebaseConfig');
         const playlistRef = doc(db, `users/${auth.currentUser.uid}/turtle_progress/playlist`);
         const playlistSnap = await getDoc(playlistRef);
-        
+
         if (playlistSnap.exists()) {
           const playlistData = playlistSnap.data();
           setTotalXP(playlistData.xp || 0);
@@ -83,7 +83,7 @@ export default function TalkingTurtle() {
           setMasteredCount(playlistData.masteredItems?.length || 0);
           setActiveCount(playlistData.activeItems?.length || 0);
           setLockedCount(playlistData.lockedItems?.length || 0);
-          
+
           // Load actual sentence text
           const loadSentences = async (ids: string[]) => {
             const sentences: string[] = [];
@@ -96,7 +96,7 @@ export default function TalkingTurtle() {
             }
             return sentences;
           };
-          
+
           setMasteredSentences(await loadSentences(playlistData.masteredItems || []));
           setActiveSentences(await loadSentences(playlistData.activeItems || []));
           setLockedSentences(await loadSentences(playlistData.lockedItems || []));
@@ -121,11 +121,11 @@ export default function TalkingTurtle() {
         useNativeDriver: false,
       }).start();
     }
-    
+
     // Auto-play model audio when item changes
     if (targetItem) {
-        // Small delay to let transition finish
-        setTimeout(() => playModelAudio(), 800);
+      // Small delay to let transition finish
+      setTimeout(() => playModelAudio(), 800);
     }
   }, [currentGlobalStep, totalSteps, targetItem]); // Added targetItem dependency
 
@@ -141,24 +141,24 @@ export default function TalkingTurtle() {
 
   const playModelAudio = async () => {
     if (!targetItem || isRecording) return;
-    
+
     try {
       setIsSpeaking(true);
-      
+
       // Check if text has pause markers (|)
       const text = targetItem.chunkedText || targetItem.text;
-      
+
       if (text.includes('|')) {
         // Split by pipe and speak each segment with pauses
         const segments = text.split('|').map(s => s.trim()).filter(s => s.length > 0);
         console.log(`[TTS] Speaking ${segments.length} segments with pauses:`, segments);
-        
+
         for (let i = 0; i < segments.length; i++) {
           console.log(`[TTS] Speaking segment ${i + 1}/${segments.length}: "${segments[i]}"`);
-          
+
           // Add word-by-word spacing to prevent contractions
           const wordByWord = segments[i].split(' ').join(', ');
-          
+
           await new Promise<void>((resolve) => {
             Speech.speak(wordByWord, {
               rate: 0.4, // Slower for paused content
@@ -168,7 +168,7 @@ export default function TalkingTurtle() {
               onError: () => resolve()
             });
           });
-          
+
           // Add 1200ms pause between segments (except after the last one)
           if (i < segments.length - 1) {
             console.log(`[TTS] Pausing 1200ms before next segment...`);
@@ -180,10 +180,10 @@ export default function TalkingTurtle() {
       } else {
         // No pause markers, speak normally but with word-by-word spacing
         console.log(`[TTS] Speaking single phrase (no pauses): "${text}"`);
-        
+
         // Add commas between words for word-by-word pronunciation
         const wordByWord = text.split(' ').join(', ');
-        
+
         Speech.speak(wordByWord, {
           rate: 0.5, // Slow pace
           pitch: 1.0,
@@ -200,13 +200,13 @@ export default function TalkingTurtle() {
 
   const handleStartRecording = async () => {
     if (isLoading || isRecording) return;
-    
+
     // Stop TTS if speaking
     if (isSpeaking) {
-        Speech.stop();
-        setIsSpeaking(false);
+      Speech.stop();
+      setIsSpeaking(false);
     }
-    
+
     try {
       setFeedback('🐢 I am listening...');
       await startRecording();
@@ -222,7 +222,7 @@ export default function TalkingTurtle() {
     setIsRecording(false);
     const audioData = await stopRecording();
     if (!audioData) {
-        return;
+      return;
     }
 
     // CLIENT-SIDE WPM CALCULATION (Quick Pre-Check)
@@ -230,14 +230,14 @@ export default function TalkingTurtle() {
       targetItem?.wordCount || 0,
       audioData.duration
     );
-    
+
     // Only proceed to server if WPM is in valid range
     if (clientResult.status !== 'perfect') {
       // Show feedback visually and speak it
       setFeedback(clientResult.feedback);
       Speech.speak(
         clientResult.feedback
-          .replace(/[\uD800-\uDFFF]/g, '') 
+          .replace(/[\uD800-\uDFFF]/g, '')
           .replace(/[\u2600-\u27BF]/g, '')
           .replace(/\s+/g, ' ')
           .trim(),
@@ -246,15 +246,15 @@ export default function TalkingTurtle() {
       console.log(`[Turtle] WPM check failed: ${clientResult.wpm} WPM (${clientResult.status})`);
       return;
     }
-    
+
     // WPM is in range - proceed to server for final validation
-    
+
     // SERVER-SIDE VALIDATION (Content & Fluency)
     try {
       setIsLoading(true);
       setFeedback('Checking your words...');
       const result = await analyzeTurtleAudio(
-        audioData.uri, 
+        audioData.uri,
         targetItem?.text,
         targetItem?.tier,
         targetItem?.requiredPauses
@@ -273,21 +273,35 @@ export default function TalkingTurtle() {
         );
 
         if (auth.currentUser && targetItem) {
-           const { leveledUp, xpAwarded } = await recordTurtleResult(
-             auth.currentUser.uid, 
-             targetItem.id, 
-             isCorrect
-           );
-           
-           // Update total XP
-           if (xpAwarded > 0) {
-             setTotalXP(prev => prev + xpAwarded);
-             console.log(`+${xpAwarded} XP! Total: ${totalXP + xpAwarded}`);
-           }
+          const { leveledUp, xpAwarded } = await recordTurtleResult(
+            auth.currentUser.uid,
+            targetItem.id,
+            isCorrect
+          );
+
+          // Update total XP
+          if (xpAwarded > 0) {
+            setTotalXP(prev => prev + xpAwarded);
+            console.log(`+${xpAwarded} XP! Total: ${totalXP + xpAwarded}`);
+          }
+
+          // NEW: Save session to global history for Progress Tab
+          const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+          const { db } = await import('@/config/firebaseConfig');
+          await addDoc(collection(db, `users/${auth.currentUser.uid}/practice_sessions`), {
+            gameId: 'turtle',
+            timestamp: serverTimestamp(),
+            word: targetItem.text,
+            tier: targetItem.tier,
+            isSuccess: isCorrect,
+            wpm: clientResult.wpm, // Save WPM too
+            feedback: result.feedback
+          });
+          console.log('💾 Turtle Session saved');
         }
 
         if (isCorrect) {
-            processSuccess();
+          processSuccess();
         }
       } else {
         setFeedback("I couldn't hear you clearly. Try again.");
@@ -295,7 +309,7 @@ export default function TalkingTurtle() {
     } catch (error) {
       setFeedback("Something went wrong. Try again.");
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -310,7 +324,7 @@ export default function TalkingTurtle() {
   // 2. Called by TurtleVideo when the segment finishes playing
   const handleVideoSegmentComplete = () => {
     console.log(`[TurtleGame] Segment complete. Current: ${currentIndex}, Total: ${currentDeck.length}`);
-    
+
     // If we just finished the last segment (index matches length because we incremented BEFORE video)
     if (currentIndex >= currentDeck.length) {
       console.log('[TurtleGame] Journey complete! Showing modal.');
@@ -327,14 +341,13 @@ export default function TalkingTurtle() {
     if (!chunkedText || !chunkedText.includes('|')) {
       // Tier 1 or no pause markers - show plain text
       return (
-        <Text className={`text-gray-100 font-bold text-center mt-1 ${
-          (targetItem?.text.length || 0) > 20 ? 'text-3xl' : 'text-5xl'
-        }`}>
+        <Text className={`text-gray-100 font-bold text-center mt-1 ${(targetItem?.text.length || 0) > 20 ? 'text-3xl' : 'text-5xl'
+          }`}>
           {targetItem?.text || 'Loading...'}
         </Text>
       );
     }
-    
+
     // Tier 2/3 with pause markers
     const parts = chunkedText.split('|').map(p => p.trim());
     return (
@@ -354,7 +367,7 @@ export default function TalkingTurtle() {
   const nextLap = () => {
     setShowLapModal(false);
     const nextLapIndex = currentLap + 1;
-    
+
     if (nextLapIndex < totalLaps) {
       // Move to next journey
       setCurrentLap(nextLapIndex);
@@ -369,149 +382,148 @@ export default function TalkingTurtle() {
   return (
     <View className="flex-1 bg-teal-50 dark:bg-slate-900">
       <LinearGradient
-        colors={isDark ? ['#0f172a', '#1e293b', '#334155'] : ['#f0fdf4', '#dcfce7', '#bbf7d0']} 
+        colors={isDark ? ['#0f172a', '#1e293b', '#334155'] : ['#f0fdf4', '#dcfce7', '#bbf7d0']}
         className="absolute inset-0"
       />
 
       <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
         {/* Header Section (Kept separate at top) */}
         <View className="flex-row items-center justify-between w-full px-5 pt-3 mb-2 z-20">
-            <TouchableOpacity 
-              className="w-11 h-11 rounded-full bg-white/60 dark:bg-slate-800/60 border border-white dark:border-slate-600 justify-center items-center shadow-sm"
-              onPress={() => {
-                try {
-                  router.back();
-                } catch (e) {
-                  console.warn('Navigation error:', e);
-                }
-              }}
-            >
-              <Ionicons name="arrow-back" size={24} color="#166534" />
-            </TouchableOpacity>
-            
-            <View className="flex-1 mx-4">
-              <View className="h-3 w-full bg-emerald-200 dark:bg-slate-700/50 rounded-full overflow-hidden border-2 border-emerald-300 dark:border-slate-600">
-                <Animated.View 
-                  className="h-full bg-emerald-600 dark:bg-emerald-500 rounded-full shadow-sm"
-                  style={{ 
-                    width: progressAnim.interpolate({
-                      inputRange: [0, 100],
-                      outputRange: ['0%', '100%']
-                    }) 
-                  }} 
-                />
-              </View>
-              <View className="flex-row justify-between mt-1 px-1">
-                <Text className="text-emerald-900 dark:text-emerald-200 font-bold text-[10px] tracking-widest uppercase">Start</Text>
-                <Text className="text-emerald-900 dark:text-emerald-200 font-bold text-[10px] tracking-widest uppercase">Finish</Text>
-              </View>
+          <TouchableOpacity
+            className="w-11 h-11 rounded-full bg-white/60 dark:bg-slate-800/60 border border-white dark:border-slate-600 justify-center items-center shadow-sm"
+            onPress={() => {
+              try {
+                router.back();
+              } catch (e) {
+                console.warn('Navigation error:', e);
+              }
+            }}
+          >
+            <Ionicons name="arrow-back" size={24} color="#166534" />
+          </TouchableOpacity>
+
+          <View className="flex-1 mx-4">
+            <View className="h-3 w-full bg-emerald-200 dark:bg-slate-700/50 rounded-full overflow-hidden border-2 border-emerald-300 dark:border-slate-600">
+              <Animated.View
+                className="h-full bg-emerald-600 dark:bg-emerald-500 rounded-full shadow-sm"
+                style={{
+                  width: progressAnim.interpolate({
+                    inputRange: [0, 100],
+                    outputRange: ['0%', '100%']
+                  })
+                }}
+              />
             </View>
-            
-            {/* Stats Button */}
-            <TouchableOpacity
-              className="w-11 h-11 rounded-full bg-white/60 dark:bg-slate-800/60 border border-white dark:border-slate-600 justify-center items-center shadow-sm"
-              onPress={() => setShowProgressModal(true)}
-            >
-              <Ionicons name="stats-chart" size={20} color={isDark ? "#4ade80" : "#166534"} />
-            </TouchableOpacity>
+            <View className="flex-row justify-between mt-1 px-1">
+              <Text className="text-emerald-900 dark:text-emerald-200 font-bold text-[10px] tracking-widest uppercase">Start</Text>
+              <Text className="text-emerald-900 dark:text-emerald-200 font-bold text-[10px] tracking-widest uppercase">Finish</Text>
+            </View>
+          </View>
+
+          {/* Stats Button */}
+          <TouchableOpacity
+            className="w-11 h-11 rounded-full bg-white/60 dark:bg-slate-800/60 border border-white dark:border-slate-600 justify-center items-center shadow-sm"
+            onPress={() => setShowProgressModal(true)}
+          >
+            <Ionicons name="stats-chart" size={20} color={isDark ? "#4ade80" : "#166534"} />
+          </TouchableOpacity>
         </View>
 
         {/* Maximized Content Card */}
         <View className="flex-1 w-full px-3 pb-4">
-            <View className="flex-1 bg-black rounded-[40px] overflow-hidden shadow-2xl border-[6px] border-white relative">
-                
-                {/* 1. Video Layer (Fills the Card) */}
-                <View className="absolute inset-0">
-                    <TurtleVideo 
-                        currentStep={currentIndex} 
-                        totalSteps={totalStepsPerLap}
-                        videoDuration={13000}
-                        journeyIndex={currentLap}
-                        onSegmentComplete={handleVideoSegmentComplete}
-                        style={{ width: '100%', height: '100%' }}
-                    />
-                    {/* Gradient Overlays for Readability */}
-                    <LinearGradient
-                        colors={['rgba(0,0,0,0.4)', 'transparent', 'transparent']} 
-                        className="absolute top-0 w-full h-32"
-                    />
-                    <LinearGradient
-                        colors={['transparent', 'transparent', 'rgba(0,0,0,0.6)']} 
-                        className="absolute bottom-0 w-full h-48"
-                    />
-                </View>
+          <View className="flex-1 bg-black rounded-[40px] overflow-hidden shadow-2xl border-[6px] border-white relative">
 
-                {/* Target Phrase Card (Translucent Overlay) */}
-                <View className="absolute top-6 w-full px-6 z-10">
-                    <View className="bg-white/20 p-5 rounded-[24px] items-center shadow-lg border border-white/30 backdrop-blur-md relative overflow-hidden">
-                        
-                        {/* XP Badge (Left) */}
-                        <TouchableOpacity 
-                            className="absolute top-3 left-3 bg-amber-400/90 px-3 py-1.5 rounded-2xl border-2 border-white active:bg-amber-500"
-                            onPress={() => setShowProgressModal(true)}
-                        >
-                            <Text className="text-amber-900 font-extrabold text-xs tracking-wider">{totalXP} XP</Text>
-                        </TouchableOpacity>
-                        
-                        {/* Speaker Button (Right) */}
-                        <TouchableOpacity 
-                            className="absolute top-3 right-3 bg-white/20 p-2 rounded-full border border-white/20 active:bg-white/30"
-                            onPress={playModelAudio}
-                            disabled={isSpeaking || isRecording}
-                        >
-                            <Ionicons name={isSpeaking ? "volume-high" : "volume-medium"} size={18} color="white" />
-                        </TouchableOpacity>
-
-                        <Text className="text-white text-xs font-bold uppercase tracking-widest mb-2 shadow-sm opacity-90">Say this...</Text>
-                        {highlightPauseMarkers(targetItem?.chunkedText)}
-                    </View>
-                </View>
-
-                {/* 3. Controls Overlay (Bottom of Card) */}
-                <View className="absolute bottom-8 w-full items-center z-10 px-6">
-                     {/* Feedback Pill */}
-                    {feedback !== '🐢 Press to start!' && (
-                        <Reanimated.View 
-                            entering={FadeInDown.springify()} 
-                            className="bg-black/60 px-5 py-2 rounded-full mb-6 shadow-xl backdrop-blur-md border border-white/20"
-                        >
-                            <Text className="text-white text-sm font-bold text-center">{feedback}</Text>
-                        </Reanimated.View>
-                    )}
-
-                    {/* Mic Button */}
-                    <View className={`p-1.5 rounded-full border-4 ${isRecording ? 'border-amber-400/50' : isLoading ? 'border-blue-400/50' : 'border-emerald-400/40'} bg-black/20 backdrop-blur-sm`}>
-                        <TouchableOpacity 
-                            className={`w-20 h-20 rounded-full justify-center items-center shadow-2xl ${
-                                isLoading ? 'bg-blue-500' : isRecording ? 'bg-amber-500' : 'bg-emerald-500'
-                            }`}
-                            onPressIn={handleStartRecording}
-                            onPressOut={handleStopRecording} 
-                            disabled={isLoading || !targetItem}
-                            activeOpacity={0.9}
-                        >
-                            {isLoading ? (
-                                <ActivityIndicator color="white" size="large" />
-                            ) : (
-                                <Ionicons 
-                                    name={isRecording ? "mic" : "mic"} 
-                                    size={36} 
-                                    color="white" 
-                                />
-                            )}
-                            <Text className="text-white font-extrabold text-[8px] mt-1 tracking-widest opacity-90 uppercase">
-                                {isLoading ? '...' : isRecording ? 'RELEASE' : 'HOLD'}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
+            {/* 1. Video Layer (Fills the Card) */}
+            <View className="absolute inset-0">
+              <TurtleVideo
+                currentStep={currentIndex}
+                totalSteps={totalStepsPerLap}
+                videoDuration={13000}
+                journeyIndex={currentLap}
+                onSegmentComplete={handleVideoSegmentComplete}
+                style={{ width: '100%', height: '100%' }}
+              />
+              {/* Gradient Overlays for Readability */}
+              <LinearGradient
+                colors={['rgba(0,0,0,0.4)', 'transparent', 'transparent']}
+                className="absolute top-0 w-full h-32"
+              />
+              <LinearGradient
+                colors={['transparent', 'transparent', 'rgba(0,0,0,0.6)']}
+                className="absolute bottom-0 w-full h-48"
+              />
             </View>
+
+            {/* Target Phrase Card (Translucent Overlay) */}
+            <View className="absolute top-6 w-full px-6 z-10">
+              <View className="bg-white/20 p-5 rounded-[24px] items-center shadow-lg border border-white/30 backdrop-blur-md relative overflow-hidden">
+
+                {/* XP Badge (Left) */}
+                <TouchableOpacity
+                  className="absolute top-3 left-3 bg-amber-400/90 px-3 py-1.5 rounded-2xl border-2 border-white active:bg-amber-500"
+                  onPress={() => setShowProgressModal(true)}
+                >
+                  <Text className="text-amber-900 font-extrabold text-xs tracking-wider">{totalXP} XP</Text>
+                </TouchableOpacity>
+
+                {/* Speaker Button (Right) */}
+                <TouchableOpacity
+                  className="absolute top-3 right-3 bg-white/20 p-2 rounded-full border border-white/20 active:bg-white/30"
+                  onPress={playModelAudio}
+                  disabled={isSpeaking || isRecording}
+                >
+                  <Ionicons name={isSpeaking ? "volume-high" : "volume-medium"} size={18} color="white" />
+                </TouchableOpacity>
+
+                <Text className="text-white text-xs font-bold uppercase tracking-widest mb-2 shadow-sm opacity-90">Say this...</Text>
+                {highlightPauseMarkers(targetItem?.chunkedText)}
+              </View>
+            </View>
+
+            {/* 3. Controls Overlay (Bottom of Card) */}
+            <View className="absolute bottom-8 w-full items-center z-10 px-6">
+              {/* Feedback Pill */}
+              {feedback !== '🐢 Press to start!' && (
+                <Reanimated.View
+                  entering={FadeInDown.springify()}
+                  className="bg-black/60 px-5 py-2 rounded-full mb-6 shadow-xl backdrop-blur-md border border-white/20"
+                >
+                  <Text className="text-white text-sm font-bold text-center">{feedback}</Text>
+                </Reanimated.View>
+              )}
+
+              {/* Mic Button */}
+              <View className={`p-1.5 rounded-full border-4 ${isRecording ? 'border-amber-400/50' : isLoading ? 'border-blue-400/50' : 'border-emerald-400/40'} bg-black/20 backdrop-blur-sm`}>
+                <TouchableOpacity
+                  className={`w-20 h-20 rounded-full justify-center items-center shadow-2xl ${isLoading ? 'bg-blue-500' : isRecording ? 'bg-amber-500' : 'bg-emerald-500'
+                    }`}
+                  onPressIn={handleStartRecording}
+                  onPressOut={handleStopRecording}
+                  disabled={isLoading || !targetItem}
+                  activeOpacity={0.9}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="white" size="large" />
+                  ) : (
+                    <Ionicons
+                      name={isRecording ? "mic" : "mic"}
+                      size={36}
+                      color="white"
+                    />
+                  )}
+                  <Text className="text-white font-extrabold text-[8px] mt-1 tracking-widest opacity-90 uppercase">
+                    {isLoading ? '...' : isRecording ? 'RELEASE' : 'HOLD'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+          </View>
         </View>
       </SafeAreaView>
 
       {/* Modals */}
-      <JourneyCompleteModal 
+      <JourneyCompleteModal
         visible={showLapModal}
         journeyNumber={currentLap + 1}
         onContinue={nextLap}
@@ -520,7 +532,7 @@ export default function TalkingTurtle() {
         <View className="flex-1 bg-black/70 justify-center items-center">
           <View className="bg-white p-10 rounded-3xl items-center shadow-2xl w-[85%]">
             <View className="bg-yellow-100 p-6 rounded-full mb-6">
-                <Text className="text-6xl shadow-sm">🏆</Text>
+              <Text className="text-6xl shadow-sm">🏆</Text>
             </View>
             <Text className="text-3xl font-black mb-2 text-slate-800 text-center">Journey Complete!</Text>
             <Text className="text-lg text-slate-500 mb-8 text-center leading-6">You've mastered all 3 adventures! The Turtle is proud.</Text>
@@ -528,7 +540,7 @@ export default function TalkingTurtle() {
           </View>
         </View>
       </Modal>
-      
+
       {/* Progress Modal */}
       <TurtleProgressModal
         visible={showProgressModal}

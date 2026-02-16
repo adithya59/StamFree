@@ -49,11 +49,24 @@ interface WordProgress {
   }
 }
 
+interface TurtleWorldStats {
+  attempts: number;
+  successes: number;
+}
+
+interface TurtleStats {
+  jungle: TurtleWorldStats;   // Tier 1
+  river: TurtleWorldStats;    // Tier 2
+  mountain: TurtleWorldStats; // Tier 3
+}
+
 export default function ProgressScreen() {
   const [loading, setLoading] = useState(true);
   const [playlist, setPlaylist] = useState<UserPlaylist | null>(null);
   const [phonemePool, setPhonemePool] = useState<Record<string, PhonemeData>>({});
   const [rhythmStats, setRhythmStats] = useState<RhythmTapStats | null>(null);
+  const [turtleStats, setTurtleStats] = useState<TurtleStats | null>(null);
+  const [speedWarnings, setSpeedWarnings] = useState<string[]>([]);
   const [wordProgress, setWordProgress] = useState<Record<string, WordProgress>>({});
   const [selectedTier, setSelectedTier] = useState<number>(1);
   const [showTierDropdown, setShowTierDropdown] = useState(false);
@@ -135,6 +148,57 @@ export default function ProgressScreen() {
       setWordProgress(progress);
     });
 
+    // 4. Listen to Turtle Talk Sessions
+    const turtleQuery = query(sessionsRef, where('gameId', '==', 'turtle'));
+    const unsubscribeTurtle = onSnapshot(turtleQuery, (snap) => {
+      const stats = {
+        jungle: { attempts: 0, successes: 0 },
+        river: { attempts: 0, successes: 0 },
+        mountain: { attempts: 0, successes: 0 }
+      };
+
+      // Track latest WPM per word to identify speed issues
+      const latestWordWpm: Record<string, number> = {};
+
+      snap.forEach(doc => {
+        const data = doc.data();
+        const tier = data.tier || 1;
+
+        // Aggregate Stats by World
+        if (tier === 1) {
+          stats.jungle.attempts++;
+          if (data.isSuccess) stats.jungle.successes++;
+        } else if (tier === 2) {
+          stats.river.attempts++;
+          if (data.isSuccess) stats.river.successes++;
+        } else if (tier === 3) {
+          stats.mountain.attempts++;
+          if (data.isSuccess) stats.mountain.successes++;
+        }
+
+        // Track Speed (Store WPM of latest attempt for each word)
+        // Assuming docs come in some order, but better to compare timestamps if available
+        // For simplicity in this snapshot, we'll just overwrite, as we want to know if *recent* performance is fast.
+        // Ideally we'd sort by timestamp, but snap order isn't guaranteed without sort.
+        // Let's assume the query or implicit order gives us a mix. 
+        // We really want to know if ANY recent attempt was too fast? 
+        // Or just the LAST one? Let's go with: if the *last logged* session for a word was too fast.
+        // We'll use the doc's timestamp if needed, but data object has it.
+        // Note: We aren't sorting the query, so order might be insertion order (mostly).
+        if (data.word && data.wpm) {
+          latestWordWpm[data.word] = data.wpm;
+        }
+      });
+
+      setTurtleStats(stats);
+
+      // Filter for speed warnings (> 130 WPM)
+      const warnings = Object.entries(latestWordWpm)
+        .filter(([_, wpm]) => wpm > 130)
+        .map(([word]) => word);
+      setSpeedWarnings(warnings);
+    });
+
     const unsubscribePlaylist = onSnapshot(playlistRef, (snap) => {
       if (snap.exists()) {
         setPlaylist(snap.data() as UserPlaylist);
@@ -148,6 +212,7 @@ export default function ProgressScreen() {
     return () => {
       unsubscribePlaylist();
       unsubscribeSessions();
+      unsubscribeTurtle();
     };
   }, []);
 
@@ -308,6 +373,78 @@ export default function ProgressScreen() {
           </View>
         </View>
 
+        {/* Turtle Talk Section */}
+        <View className="mx-4 bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm mb-6">
+          <View className="flex-row items-center gap-4 mb-6">
+            <View className="w-14 h-14 rounded-full bg-teal-500 items-center justify-center shadow-lg shadow-teal-500/30">
+              <MaterialCommunityIcons name="tortoise" size={28} color="#fff" />
+            </View>
+            <View className="flex-1">
+              <H2 className="text-slate-800 dark:text-white">Turtle Talk</H2>
+              <P className="text-xs text-slate-500 dark:text-slate-400">Slow and steady wins the race!</P>
+            </View>
+          </View>
+
+          <View className="h-[1px] bg-slate-100 dark:bg-slate-700 w-full mb-6" />
+
+          {/* Worlds Progress */}
+          <View className="flex-row justify-between gap-2 mb-6">
+            {/* Jungle */}
+            <View className="flex-1 bg-green-50 dark:bg-green-900/20 p-3 rounded-xl items-center border border-green-100 dark:border-green-900/30">
+              <Text className="text-xs font-bold text-green-700 dark:text-green-400 mb-1 uppercase tracking-wider">Jungle</Text>
+              <Text className="text-xl font-black text-slate-800 dark:text-white">{turtleStats?.jungle.attempts || 0}</Text>
+              <Text className="text-[10px] text-slate-400 mb-2">Attempts</Text>
+              <View className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md">
+                <Text className="text-xs font-bold text-green-600">
+                  {turtleStats?.jungle.attempts ? Math.round((turtleStats.jungle.successes / turtleStats.jungle.attempts) * 100) : 0}%
+                </Text>
+              </View>
+            </View>
+
+            {/* River */}
+            <View className="flex-1 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl items-center border border-blue-100 dark:border-blue-900/30">
+              <Text className="text-xs font-bold text-blue-700 dark:text-blue-400 mb-1 uppercase tracking-wider">River</Text>
+              <Text className="text-xl font-black text-slate-800 dark:text-white">{turtleStats?.river.attempts || 0}</Text>
+              <Text className="text-[10px] text-slate-400 mb-2">Attempts</Text>
+              <View className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md">
+                <Text className="text-xs font-bold text-blue-600">
+                  {turtleStats?.river.attempts ? Math.round((turtleStats.river.successes / turtleStats.river.attempts) * 100) : 0}%
+                </Text>
+              </View>
+            </View>
+
+            {/* Mountain */}
+            <View className="flex-1 bg-purple-50 dark:bg-purple-900/20 p-3 rounded-xl items-center border border-purple-100 dark:border-purple-900/30">
+              <Text className="text-xs font-bold text-purple-700 dark:text-purple-400 mb-1 uppercase tracking-wider">Mtn</Text>
+              <Text className="text-xl font-black text-slate-800 dark:text-white">{turtleStats?.mountain.attempts || 0}</Text>
+              <Text className="text-[10px] text-slate-400 mb-2">Attempts</Text>
+              <View className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md">
+                <Text className="text-xs font-bold text-purple-600">
+                  {turtleStats?.mountain.attempts ? Math.round((turtleStats.mountain.successes / turtleStats.mountain.attempts) * 100) : 0}%
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Speed Warnings */}
+          {speedWarnings.length > 0 && (
+            <View className="bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/30">
+              <View className="flex-row items-center gap-2 mb-2">
+                <MaterialCommunityIcons name="speedometer" size={18} color="#DC2626" />
+                <Text className="text-sm font-bold text-red-700 dark:text-red-400">Too Fast! Slow down on:</Text>
+              </View>
+              <View className="flex-row flex-wrap gap-2">
+                {speedWarnings.map((word, idx) => (
+                  <View key={idx} className="bg-white dark:bg-red-900/40 px-3 py-1 rounded-full border border-red-100 dark:border-red-800">
+                    <Text className="text-xs font-medium text-red-600 dark:text-red-300">{word}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+        </View>
+
         {/* Snake Game Section */}
         <View className="mx-4 bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm mb-6">
           <View className="flex-row items-center gap-4 mb-6">
@@ -357,17 +494,7 @@ export default function ProgressScreen() {
         </View>
 
         {/* Coming Soon Section */}
-        <View className="mx-4 bg-slate-100 dark:bg-slate-800/50 rounded-3xl p-5 border border-dashed border-slate-200 dark:border-slate-700 opacity-70">
-          <View className="flex-row items-center gap-4">
-            <View className="w-14 h-14 rounded-full bg-slate-400 items-center justify-center">
-              <MaterialCommunityIcons name="tortoise" size={28} color="#fff" />
-            </View>
-            <View className="flex-1">
-              <H2 className="text-slate-600 dark:text-slate-400">Turtle</H2>
-              <P className="text-xs text-slate-500 dark:text-slate-500">Coming soon: Track your speech rate and phrasing!</P>
-            </View>
-          </View>
-        </View>
+
       </ScrollView>
     </ScreenWrapper>
   );

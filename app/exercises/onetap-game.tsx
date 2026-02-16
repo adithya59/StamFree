@@ -56,7 +56,7 @@ export default function OneTapGameScreen() {
     onSuccess: async (metrics) => {
       console.log('✅ One-Tap Success!', metrics);
       setOwlState('success'); // Head tilt reaction
-      
+
       // Award XP and save to Firestore
       try {
         const { updateUserStatsOnActivity } = await import('@/services/statsService');
@@ -66,9 +66,29 @@ export default function OneTapGameScreen() {
         console.error('Failed to update stats:', error);
       }
 
-      // TODO: Save session metrics to Firestore
-      // TODO: Navigate to results screen
-      
+      // Save session metrics to Firestore
+      if (auth.currentUser) {
+        try {
+          const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+          const { db } = await import('@/config/firebaseConfig');
+          await addDoc(collection(db, `users/${auth.currentUser.uid}/practice_sessions`), {
+            gameId: 'focus_owl',
+            timestamp: serverTimestamp(),
+            word: level?.targetWord || 'Unknown',
+            tier: level?.tier || 1,
+            accuracy: 100, // Success = 100%
+            attempts: sessionState.attempts,
+            reactionTime: metrics.reactionTime,
+            isSuccess: true
+          });
+          console.log('💾 Focus Owl Session saved');
+        } catch (error) {
+          console.error('Failed to save session:', error);
+        }
+      }
+
+      // TODO: Navigate to results screen or show modal
+
       setTimeout(() => {
         reset();
         setOwlState('ready');
@@ -86,7 +106,7 @@ export default function OneTapGameScreen() {
     const loadDeck = async () => {
       try {
         await loadPlaylist();
-        
+
         // Load first word from active deck
         if (activeCards.length > 0) {
           const firstWord = activeCards[0];
@@ -104,7 +124,7 @@ export default function OneTapGameScreen() {
           // Fallback to mock if deck is empty
           setLevel(MOCK_LEVEL);
         }
-        
+
         setOwlState('sleeping');
         setPromptComplete(false);
       } catch (error) {
@@ -170,7 +190,7 @@ export default function OneTapGameScreen() {
         <View style={{ flex: 1 }}>
           {/* Floating Header with Back Button */}
           <View style={styles.floatingHeader} pointerEvents="box-none">
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
               onPress={() => router.back()}
               activeOpacity={0.7}
@@ -260,13 +280,13 @@ export default function OneTapGameScreen() {
               <View style={styles.owlContainer}>
                 <OneTapOwl gameState={owlState} />
                 <Text style={styles.owlStatusText}>
-                  {sessionState.isRecording 
-                    ? 'Listening...' 
-                    : owlState === 'flying' 
-                    ? 'Flew away!' 
-                    : owlState === 'sleeping' 
-                    ? '📥 Loading motor plan...' 
-                    : '✅ Motor plan ready!'}
+                  {sessionState.isRecording
+                    ? 'Listening...'
+                    : owlState === 'flying'
+                      ? 'Flew away!'
+                      : owlState === 'sleeping'
+                        ? '📥 Loading motor plan...'
+                        : '✅ Motor plan ready!'}
                 </Text>
               </View>
 
@@ -306,11 +326,11 @@ export default function OneTapGameScreen() {
                       activeOpacity={0.7}
                     >
                       <Text style={styles.tapButtonText}>
-                        {isRecording 
-                          ? '🎤 Recording... Say it smooth!' 
-                          : !sessionState.isReady 
-                          ? '🚫 Wait for prompt...' 
-                          : '👆 TAP ONCE - Say the whole word'}
+                        {isRecording
+                          ? '🎤 Recording... Say it smooth!'
+                          : !sessionState.isReady
+                            ? '🚫 Wait for prompt...'
+                            : '👆 TAP ONCE - Say the whole word'}
                       </Text>
                       {sessionState.isReady && !isRecording && (
                         <Text style={styles.tapButtonSubtext}>(No repeating!)</Text>
