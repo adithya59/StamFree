@@ -76,9 +76,8 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/turtle-game" options={{ headerShown: false }} />
-        <Stack.Screen name="exercises/breathing-exercises" options={{ headerShown: false }} />
-        <Stack.Screen name="exercises/onetap-game" options={{ headerShown: false }} />
-        <Stack.Screen name="exercises/word-games" options={{ headerShown: false }} />
+        <Stack.Screen name="exercises/balloon-game" options={{ headerShown: false }} />
+        <Stack.Screen name="exercises/tapping-game" options={{ headerShown: false }} />
         <Stack.Screen name="editprofile" options={{ headerShown: false }} />
         <Stack.Screen name="demo" options={{ headerShown: false }} />
         <Stack.Screen name="index" options={{ headerShown: false }} /> 
