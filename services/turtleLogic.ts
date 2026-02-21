@@ -6,42 +6,56 @@ export interface RateResult {
   feedback: string;
 }
 
+// Define the WPM ranges for each tier
+const TIER_RANGES = {
+  1: { min: 40, max: 70, name: 'Jungle' },   // Very slow, control
+  2: { min: 60, max: 90, name: 'River' },    // Slow + smooth
+  3: { min: 80, max: 110, name: 'Mountain' } // Near-normal, controlled
+};
+
 /**
  * Calculates the speaking rate and returns a status based on therapeutic targets.
- * Target: 70 - 130 WPM (Turtle Mode)
+ * 
+ * Tier 1 (Jungle): 40–70 WPM
+ * Tier 2 (River): 60–90 WPM
+ * Tier 3 (Mountain): 80–110 WPM
  */
 export function calculateSpeakingRate(
-  wordCount: number, 
-  durationMs: number
+  wordCount: number,
+  durationMs: number,
+  tier: number = 1 // Default to Tier 1 if not specified
 ): RateResult {
   // 1. Convert duration to minutes
   const durationMin = durationMs / 1000 / 60;
-  
+
   // 2. Calculate WPM
   if (durationMin < 0.005) { // Guard against extremely short clips (<0.3s)
     return { wpm: 0, status: 'too_fast', feedback: 'Too short! Try saying the whole thing. 🐢' };
   }
-  
+
   const wpm = Math.round(wordCount / durationMin);
 
-  // 3. Determine Status
-  if (wpm > 130) {
-    return { 
-      wpm, 
-      status: 'too_fast', 
-      feedback: 'Whoa! Too fast for a Turtle! Try again slower. 🐢' 
+  // 3. Get tier constraints (fallback to Tier 1 if invalid tier passed)
+  const range = TIER_RANGES[tier as keyof typeof TIER_RANGES] || TIER_RANGES[1];
+
+  // 4. Determine Status based on Tier
+  if (wpm > range.max) {
+    return {
+      wpm,
+      status: 'too_fast',
+      feedback: `Whoa! Too fast for the ${range.name}! Aim for ${range.min}-${range.max} WPM. 🐢`
     };
-  } else if (wpm < 70) {
-    return { 
+  } else if (wpm < range.min) {
+    return {
       wpm,
       status: 'too_slow',
-      feedback: 'A bit too sleepy! Wake up! 💤'
+      feedback: `A bit too sleepy for the ${range.name}! Wake up! 💤`
     };
   } else {
-    return { 
+    return {
       wpm,
       status: 'perfect',
-      feedback: 'Perfect turtle pace! Watch me go! 🌟'
+      feedback: `Perfect ${range.name} pace! Watch me go! 🌟`
     };
   }
 }

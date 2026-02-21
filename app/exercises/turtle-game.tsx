@@ -228,7 +228,8 @@ export default function TalkingTurtle() {
     // CLIENT-SIDE WPM CALCULATION (Quick Pre-Check)
     const clientResult = calculateSpeakingRate(
       targetItem?.wordCount || 0,
-      audioData.duration
+      audioData.duration,
+      targetItem?.tier || 1 // Pass the tier (default to 1)
     );
 
     // Only proceed to server if WPM is in valid range
