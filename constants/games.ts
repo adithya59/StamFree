@@ -8,6 +8,7 @@ export interface GameConfig {
   gradientColors: [string, string, ...string[]];
   darkGradientColors: [string, string, ...string[]];
   route: string;
+  type: 'prolongation' | 'blocking' | 'repetition' | 'common';
 }
 
 export const GAMES: GameConfig[] = [
@@ -20,6 +21,7 @@ export const GAMES: GameConfig[] = [
     gradientColors: ['#2dd4bf', '#0f766e'], // Teal-400 -> Teal-700
     darkGradientColors: ['#115e59', '#134e4a'], // Teal-800 -> Teal-900 (Deep)
     route: '/exercises/turtle-game',
+    type: 'common',
   },
   {
     id: 'snake',
@@ -30,6 +32,7 @@ export const GAMES: GameConfig[] = [
     gradientColors: ['#4ade80', '#15803d'], // Green-400 -> Green-700
     darkGradientColors: ['#166534', '#14532d'], // Green-800 -> Green-900
     route: '/exercises/snake-game',
+    type: 'prolongation',
   },
   {
     id: 'tapping',
@@ -40,6 +43,7 @@ export const GAMES: GameConfig[] = [
     gradientColors: ['#ec4899', '#be185d'], // Pink-500 -> Pink-700
     darkGradientColors: ['#9d174d', '#831843'], // Pink-800 -> Pink-900
     route: '/exercises/tapping-game',
+    type: 'repetition',
   },
   {
     id: 'onetap',
@@ -50,6 +54,7 @@ export const GAMES: GameConfig[] = [
     gradientColors: ['#c084fc', '#7e22ce'], // Purple-400 -> Purple-700
     darkGradientColors: ['#6b21a8', '#581c87'], // Purple-800 -> Purple-900
     route: '/exercises/onetap-game',
+    type: 'repetition',
   },
   {
     id: 'balloon',
@@ -60,6 +65,7 @@ export const GAMES: GameConfig[] = [
     gradientColors: ['#38bdf8', '#0369a1'], // Sky-400 -> Sky-700
     darkGradientColors: ['#075985', '#0c4a6e'], // Sky-800 -> Sky-900
     route: '/exercises/balloon-game',
+    type: 'common',
   },
   {
     id: 'word-games',
@@ -70,6 +76,7 @@ export const GAMES: GameConfig[] = [
     gradientColors: ['#fbbf24', '#b45309'], // Amber-400 -> Amber-700
     darkGradientColors: ['#92400e', '#78350f'], // Amber-800 -> Amber-900
     route: '/exercises/word-games',
+    type: 'blocking',
   },
    {
     id: 'breathing',
@@ -79,5 +86,6 @@ export const GAMES: GameConfig[] = [
     gradientColors: ['#818cf8', '#4338ca'], // Indigo-400 -> Indigo-700
     darkGradientColors: ['#3730a3', '#312e81'], // Indigo-800 -> Indigo-900
     route: '/exercises/breathing-exercises',
+    type: 'prolongation',
   }
 ];
