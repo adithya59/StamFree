@@ -1,332 +1,294 @@
-/**
- * Balloon Game (Easy Onset) Screen
- * Scaffold for wiring Pufferfish-themed exercise
- */
+import React, { useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Animated,
+  ImageBackground,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 
-import { BalloonAsset } from '@/components/balloon/BalloonAsset';
-import { BalloonEngine } from '@/components/balloon/BalloonEngine';
-import { useBalloonSession } from '@/hooks/useBalloonSession';
-import { BalloonLevel } from '@/types/balloon';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+// Adjusted for 6-12 year olds (3 seconds per phase)
+const INHALE_DURATION = 3000;
+const EXHALE_DURATION = 3000;
 
-// TODO: Replace with actual content from Firestore
-const MOCK_LEVEL: BalloonLevel = {
-  levelId: 'balloon-test-1',
-  tier: 1,
-  phonemeCode: 'AA',
-  targetWord: 'Puppy',
-  maxAttackSlope: 0.5,
-  xpReward: 25,
-};
+export default function BreathingBalloonScreen() {
+  const [phase, setPhase] = useState<'idle' | 'inhale' | 'exhale' | 'approval'>('idle');
+  const [feedback, setFeedback] = useState('Parents: Please watch your child breathe. 🎈');
+  const [hasCompleatedCycle, setHasCompleatedCycle] = useState(false);
 
-export default function BalloonGameScreen() {
-  const [level, setLevel] = useState<BalloonLevel | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isFlying, setIsFlying] = useState(false);
+  // Animation values
+  const balloonScale = useRef(new Animated.Value(1)).current;
+  const balloonOpacity = useRef(new Animated.Value(1)).current;
 
-  const {
-    sessionState,
-    startRecording,
-    stopRecording,
-    processAmplitudeSample,
-    reset,
-  } = useBalloonSession({
-    level: level || MOCK_LEVEL,
-    onSuccess: async (metrics) => {
-      console.log('✅ Balloon Success!', metrics);
+  const startBreathing = () => {
+    setHasCompleatedCycle(false);
+    runBreathingCycle();
+  };
 
-      // Award XP and save to Firestore
-      try {
-        const { updateUserStatsOnActivity } = await import('@/services/statsService');
-        await updateUserStatsOnActivity(level?.xpReward || MOCK_LEVEL.xpReward);
-        console.log(`Awarded ${level?.xpReward || MOCK_LEVEL.xpReward} XP`);
-      } catch (error) {
-        console.error('Failed to update stats:', error);
+  const runBreathingCycle = () => {
+    setPhase('inhale');
+    setFeedback('Breathe in slowly (nose)... 🌬️');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    Animated.timing(balloonScale, {
+      toValue: 2.5,
+      duration: INHALE_DURATION,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setPhase('exhale');
+        setFeedback('Now, breathe out gently (mouth)... 😌');
+
+        Animated.timing(balloonScale, {
+          toValue: 1.2,
+          duration: EXHALE_DURATION,
+          useNativeDriver: true,
+        }).start(({ finished: exhaled }) => {
+          if (exhaled) {
+            setPhase('approval');
+            setFeedback('Parents: Did they do it correctly?');
+            setHasCompleatedCycle(true);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+        });
       }
+    });
+  };
 
-      // Show flying away animation
-      setIsFlying(true);
+  const handleParentApproval = (approved: boolean) => {
+    if (approved) {
+      // Success - Pop the balloon
+      setFeedback('POP! wonderful! 🌟');
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-      // TODO: Save session metrics to Firestore
-      // TODO: Navigate to results screen
-
-      setTimeout(() => {
-        reset();
-        setIsFlying(false);
-      }, 2000);
-    },
-    onFail: (metrics) => {
-      console.log('❌ Balloon Failed', metrics);
-      // TODO: Show feedback, retry option
-      setTimeout(() => {
-        reset();
-      }, 1500);
-    },
-  });
-
-  // Load level from content bank
-  useEffect(() => {
-    const loadLevel = async () => {
-      try {
-        // TODO: Fetch level from Firestore
-        // const fetchedLevel = await getBalloonLevel();
-        setLevel(MOCK_LEVEL);
-      } catch (error) {
-        console.error('Failed to load level:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadLevel();
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      reset(); // Clear any pending state
-    };
-  }, [reset]);
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4A7BA7" />
-        <Text style={styles.loadingText}>Loading level...</Text>
-      </View>
-    );
-  }
-
-  if (!level) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>No level available</Text>
-      </View>
-    );
-  }
+      // Balloon "pops"
+      Animated.sequence([
+        Animated.timing(balloonScale, {
+          toValue: 3,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(balloonOpacity, {
+          toValue: 0,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setTimeout(() => {
+          // Reset
+          balloonScale.setValue(1);
+          balloonOpacity.setValue(1);
+          setPhase('idle');
+          setFeedback('Great Job! Ready for another? 🎈');
+        }, 1500);
+      });
+    } else {
+      // Retry - Reset without pop
+      setFeedback('Let\'s try together again! 🔄');
+      balloonScale.setValue(1);
+      setPhase('idle');
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>🐡 Balloon Game</Text>
-        <Text style={styles.subtitle}>Blow gently and watch it grow!</Text>
-      </View>
+    <ImageBackground
+      source={require('../../assets/images/sky.jpg')}
+      style={styles.container}
+    >
+      <View style={styles.overlay}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={28} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.title}>Balloon Breath</Text>
+          <View style={{ width: 28 }} />
+        </View>
 
-      {/* Target Phoneme */}
-      <View style={styles.infoContainer}>
-        <Text style={styles.targetLabel}>Practice Phoneme:</Text>
-        <Text style={styles.targetPhoneme}>{level.phonemeCode}</Text>
-        {level.targetWord && (
-          <Text style={styles.targetWord}>{level.targetWord}</Text>
-        )}
-      </View>
-
-      {/* Soft Onset Guidance */}
-      <View style={styles.guidanceContainer}>
-        <Text style={styles.guidanceTitle}>💡 Tips for Soft Onset:</Text>
-        <Text style={styles.guidanceText}>
-          • Start gently at a low volume
-        </Text>
-        <Text style={styles.guidanceText}>
-          • Gradually increase breath pressure
-        </Text>
-        <Text style={styles.guidanceText}>
-          • Avoid a hard explosive start
-        </Text>
-      </View>
-
-      {/* Balloon Engine with Asset */}
-      <BalloonEngine
-        isReady={sessionState.isReady}
-        isRecording={sessionState.isRecording}
-        onRecordingStart={startRecording}
-        onRecordingStop={stopRecording}
-        onAmplitudeSample={processAmplitudeSample}
-        onError={(error) => console.error('Recording error:', error)}
-      >
-        {({ onTap, isRecording, inflationLevel }) => (
-          <View style={styles.gameArea}>
-            {/* Pufferfish Asset */}
-            <BalloonAsset
-              inflationLevel={inflationLevel}
-              hasPopped={sessionState.hasPopped}
-              isFlying={isFlying}
-            />
-
-            {/* Inflation Meter */}
-            <View style={styles.meterContainer}>
-              <View style={styles.meterBackground}>
-                <View
-                  style={[
-                    styles.meterFill,
-                    { width: `${inflationLevel * 100}%` },
-                  ]}
-                />
-              </View>
-              <Text style={styles.meterText}>
-                {sessionState.hasPopped
-                  ? '💥 Popped!'
-                  : `${Math.round(inflationLevel * 100)}%`}
-              </Text>
+        <View style={styles.gameArea}>
+          <Animated.View style={[
+            styles.balloonContainer,
+            {
+              transform: [{ scale: balloonScale }],
+              opacity: balloonOpacity
+            }
+          ]}>
+            <View style={styles.balloon}>
+              <View style={styles.balloonShine} />
             </View>
+            <View style={styles.balloonString} />
+          </Animated.View>
+        </View>
 
-            {/* Start Button */}
-            <TouchableOpacity
-              style={[
-                styles.tapButton,
-                !sessionState.isReady && styles.tapButtonDisabled,
-                isRecording && styles.tapButtonRecording,
-              ]}
-              onPress={onTap}
-              disabled={!sessionState.isReady || isRecording}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.tapButtonText}>
-                {isRecording ? '🎤 Blowing...' : '👆 START'}
-              </Text>
-            </TouchableOpacity>
+        <View style={styles.footer}>
+          <View style={styles.feedbackCard}>
+            <Text style={styles.feedbackText}>{feedback}</Text>
           </View>
-        )}
-      </BalloonEngine>
-    </View>
+
+          <View style={styles.controls}>
+            {phase === 'idle' ? (
+              <TouchableOpacity style={styles.startButton} onPress={startBreathing}>
+                <Ionicons name="play" size={32} color="white" />
+                <Text style={styles.buttonText}>START</Text>
+              </TouchableOpacity>
+            ) : phase === 'approval' ? (
+              <View style={styles.approvalButtons}>
+                <TouchableOpacity
+                  style={[styles.approvalButton, styles.retryButton]}
+                  onPress={() => handleParentApproval(false)}
+                >
+                  <Ionicons name="refresh" size={24} color="white" />
+                  <Text style={styles.buttonText}>Try Again</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.approvalButton, styles.successButton]}
+                  onPress={() => handleParentApproval(true)}
+                >
+                  <Ionicons name="checkmark-circle" size={24} color="white" />
+                  <Text style={styles.buttonText}>Good Job!</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.breathingIndicator}>
+                <Text style={styles.breathingText}>
+                  {phase === 'inhale' ? 'Inhaling...' : 'Exhaling...'}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E8F4F8',
-    padding: 20,
   },
-  loadingContainer: {
+  overlay: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#E8F4F8',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#4A7BA7',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#E8F4F8',
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#FF6B6B',
-    fontWeight: 'bold',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'space-between',
+    paddingVertical: 40,
   },
   header: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#2E5077',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#4A7BA7',
-  },
-  infoContainer: {
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  targetLabel: {
-    fontSize: 14,
-    color: '#7A9CC6',
-    marginBottom: 4,
-  },
-  targetPhoneme: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: '#2E5077',
-    marginBottom: 4,
-  },
-  targetWord: {
-    fontSize: 18,
-    color: '#4A7BA7',
-  },
-  guidanceContainer: {
-    backgroundColor: '#FFF9E6',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FFD700',
-  },
-  guidanceTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FF8C00',
-    marginBottom: 8,
-  },
-  guidanceText: {
-    fontSize: 13,
-    color: '#555',
-    marginBottom: 4,
-  },
-  gameArea: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  meterContainer: {
-    width: '100%',
-    marginVertical: 20,
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
   },
-  meterBackground: {
-    height: 30,
-    backgroundColor: '#D0D0D0',
-    borderRadius: 15,
-    overflow: 'hidden',
-    marginBottom: 8,
+  backButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 20,
   },
-  meterFill: {
-    height: '100%',
-    backgroundColor: '#4CAF50',
-    borderRadius: 15,
-  },
-  meterText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4A7BA7',
-    textAlign: 'center',
-  },
-  tapButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 20,
-    paddingHorizontal: 40,
-    borderRadius: 50,
-    alignItems: 'center',
-    marginVertical: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  tapButtonDisabled: {
-    backgroundColor: '#B0BEC5',
-  },
-  tapButtonRecording: {
-    backgroundColor: '#FF6B6B',
-  },
-  tapButtonText: {
+  title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: 'white',
+  },
+  gameArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  balloonContainer: {
+    alignItems: 'center',
+  },
+  balloon: {
+    width: 100,
+    height: 120,
+    backgroundColor: '#FF6B6B',
+    borderRadius: 50,
+    position: 'relative',
+  },
+  balloonShine: {
+    position: 'absolute',
+    top: 15,
+    left: 15,
+    width: 20,
+    height: 30,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 10,
+    transform: [{ rotate: '25deg' }],
+  },
+  balloonString: {
+    width: 2,
+    height: 100,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  footer: {
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  feedbackCard: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 20,
+    width: '100%',
+    marginBottom: 20,
+    elevation: 5,
+  },
+  feedbackText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center',
+  },
+  controls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    width: '100%',
+    minHeight: 80, // Reserve space for buttons
+    alignItems: 'center',
+  },
+  startButton: {
+    backgroundColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    gap: 10,
+    elevation: 5,
+  },
+  approvalButtons: {
+    flexDirection: 'row',
+    gap: 20,
+  },
+  approvalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    gap: 8,
+    elevation: 3,
+  },
+  retryButton: {
+    backgroundColor: '#FF9800',
+  },
+  successButton: {
+    backgroundColor: '#4CAF50',
+  },
+  breathingIndicator: {
+    padding: 15,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+  },
+  breathingText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  buttonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });

@@ -13,9 +13,6 @@ import { getAnalyzeAudioUrl, getHealthUrl } from '../config/backend';
 import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
 import { H1, H2, Label, P } from '@/components/ui/Typography';
 import { Ionicons } from '@expo/vector-icons';
-import { GameCard } from '@/components/ui/GameCard';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
 
 export default function Demo() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);

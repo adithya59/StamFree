@@ -46,17 +46,6 @@ export const GAMES: GameConfig[] = [
     type: 'repetition',
   },
   {
-    id: 'onetap',
-    title: 'Focus Owl',
-    description: 'Think before you speak!',
-    iconName: 'owl',
-    lottieSource: require('@/assets/lottie/owl.json'),
-    gradientColors: ['#c084fc', '#7e22ce'], // Purple-400 -> Purple-700
-    darkGradientColors: ['#6b21a8', '#581c87'], // Purple-800 -> Purple-900
-    route: '/exercises/onetap-game',
-    type: 'repetition',
-  },
-  {
     id: 'balloon',
     title: 'Balloon Breath',
     description: 'Gentle easy onset practice',

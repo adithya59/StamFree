@@ -6,6 +6,8 @@
 import { analyzeTappingAudio, type TappingAnalysisResponse } from '@/services/tappingBackend';
 import { Audio } from 'expo-av';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '@/config/firebaseConfig';
 
 export interface TappingSessionState {
     isRecording: boolean;
@@ -101,7 +103,7 @@ export function useTappingSession() {
         console.log(`👆 Tap at ${timestamp.toFixed(2)}s`);
     }, [state.isRecording]);
 
-    const stopSession = useCallback(async (targetWord: string, syllables: string[]) => {
+    const stopSession = useCallback(async (targetWord: string, syllables: string[], tier: number) => {
         if (!recordingRef.current) return;
 
         try {
@@ -133,6 +135,27 @@ export function useTappingSession() {
                 isProcessing: false,
                 lastResult: result
             }));
+
+            // Save to Firestore
+            if (auth.currentUser) {
+                try {
+                    await addDoc(collection(db, `users/${auth.currentUser.uid}/practice_sessions`), {
+                        gameId: 'onetap',
+                        timestamp: serverTimestamp(),
+                        word: targetWord,
+                        tier: tier,
+                        accuracy: result.accuracy,
+                        isSync: result.is_sync,
+                        fluent: result.fluent,
+                        syllables: syllables.length,
+                        syllable_matches: result.syllable_matches
+                    });
+                    console.log('💾 Session saved to Firestore');
+                } catch (saveError) {
+                    console.error('Failed to save session:', saveError);
+                    // Don't fail the UI, just log the error
+                }
+            }
 
         } catch (error) {
             console.error('Failed to stop/analyze session:', error);
