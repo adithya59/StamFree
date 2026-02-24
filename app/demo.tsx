@@ -51,17 +51,32 @@ export default function Demo() {
 
   // 2. Start Recording
   async function startRecording() {
-    try {
-      setResult(null);
-      console.log('Starting recording..');
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      setRecording(recording);
-      setIsRecording(true);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to start recording.');
+  try {
+    if (isRecording || uploading) return;
+
+    setResult(null);
+
+    const permission = await Audio.requestPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Permission needed', 'Microphone permission required.');
+      return;
     }
+
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+    });
+
+    const { recording } = await Audio.Recording.createAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    );
+
+    setRecording(recording);
+    setIsRecording(true);
+  } catch (err) {
+    console.log("Recording error:", err);
   }
+}
 
   // 3. Stop & Upload
   async function stopRecording() {
@@ -100,6 +115,15 @@ export default function Demo() {
       console.log('Server Response:', data);
       setResult(data);
       setThinkingMessage(undefined);
+
+      // 🔥 PERSONALIZATION LOGIC
+      if (data.is_stutter && data.type) {
+        let detectedType = data.type.toLowerCase(); 
+        if (detectedType === 'block') {
+          detectedType = 'blocking';
+        }
+        await AsyncStorage.setItem('stutterType', detectedType);
+      } 
     } catch (error) {
       setThinkingMessage('Couldn\'t reach the server. Check IP, then retry.');
       setAnalysisFailed(true);
@@ -200,7 +224,29 @@ export default function Demo() {
                     <H2 className="text-slate-800 dark:text-slate-100">{((result.stutter_score || 0) * 100).toFixed(0)}%</H2>
                   </View>
                 </View>
+
+
+                {result?.is_stutter && (
+                  <TouchableOpacity
+                    className="mt-6 bg-brand-primary py-3 rounded-xl items-center"
+                    onPress={() => router.replace('/(tabs)')}
+                  >
+                    <Text className="text-white font-bold text-lg">
+                      View My Therapy Plan
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
+            )}
+            {!result.is_stutter && (
+              <TouchableOpacity
+                className="mt-6 bg-green-600 py-3 rounded-xl items-center"
+                onPress={() => router.replace('/(tabs)')}
+              >
+                <Text className="text-white font-bold text-lg">
+                  Continue to Exercises
+                </Text>
+              </TouchableOpacity>
             )}
           </View>
         )}
