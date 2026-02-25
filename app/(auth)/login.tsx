@@ -52,7 +52,13 @@ export default function LoginScreen() {
         JSON.stringify({ email: user.email, uid: user.uid })
       );
 
-      router.replace('/(tabs)');
+      const savedType = await AsyncStorage.getItem('stutterType');
+
+      if (!savedType) {
+        router.replace('/detection-intro');
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (error: any) {
       Alert.alert('Login Failed', 'Invalid email or password');
     } finally {

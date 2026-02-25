@@ -10,11 +10,13 @@ import { H1, P } from '@/components/ui/Typography';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
   const [stats, setStats] = useState<UserStats | null>(null);
   const colorScheme = useColorScheme();
+  const [stutterType, setStutterType] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -23,20 +25,28 @@ export default function HomeScreen() {
   }, [navigation]);
 
   useFocusEffect(
-    useCallback(() => {
-      let isActive = true;
-      const fetchStats = async () => {
-        try {
-          const data = await getUserStats();
-          if (isActive) setStats(data);
-        } catch (e) {
-          console.error('Failed to load stats', e);
+  useCallback(() => {
+    let isActive = true;
+
+    const fetchData = async () => {
+      try {
+        const data = await getUserStats();
+        const savedType = await AsyncStorage.getItem('stutterType');
+
+        if (isActive) {
+          setStats(data);
+          setStutterType(savedType);
         }
-      };
-      fetchStats();
-      return () => { isActive = false; };
-    }, [])
-  );
+      } catch (e) {
+        console.error('Failed to load data', e);
+      }
+    };
+
+    fetchData();
+
+    return () => { isActive = false; };
+  }, [])
+);
 
   const renderGameItem = ({ item, index }: { item: GameConfig; index: number }) => (
     <View className="flex-1 py-2">
@@ -62,13 +72,24 @@ export default function HomeScreen() {
       <View className="pt-2 pb-6">
         <H1 className="mb-2">Welcome Back! 👋</H1>
         <P>Choose an exercise to get started today.</P>
-        
+        {stutterType && (
+          <View className="mt-2 bg-teal-100 dark:bg-teal-900/30 px-4 py-2 rounded-xl self-start">
+            <Text className="text-teal-700 dark:text-teal-300 font-semibold">
+              Your Therapy Plan: {stutterType.charAt(0).toUpperCase() + stutterType.slice(1)}
+            </Text>
+          </View>
+        )}
         <TouchableOpacity 
-            className="mt-4 flex-row items-center space-x-2 rounded-xl bg-teal-50 px-4 py-3 dark:bg-teal-900/30 self-start"
-            onPress={() => router.push('/demo')}
+          className="mt-4 flex-row items-center space-x-2 rounded-xl bg-teal-50 px-4 py-3 dark:bg-teal-900/30 self-start"
+          onPress={async () => {
+            await AsyncStorage.removeItem('stutterType');
+            router.replace('/demo');
+          }}
         >
-          <MaterialCommunityIcons name="flask" size={20} color="#0D9488" />
-          <Text className="font-semibold text-brand-primary">Open Stutter Detection Demo</Text>
+          <MaterialCommunityIcons name="refresh" size={20} color="#0D9488" />
+          <Text className="font-semibold text-brand-primary">
+            Retest My Speech
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -121,7 +142,14 @@ export default function HomeScreen() {
         gradientColors={colorScheme === 'dark' ? ['#0f172a', '#020617'] : ['#f8fafc', '#e2e8f0']} // Slate-50->200 (Light), Slate-900->950 (Dark)
     >
       <FlatList
-        data={GAMES}
+        data={
+          !stutterType
+            ? GAMES
+            : GAMES.filter(
+              game =>
+              game.type === stutterType || game.type === 'common'
+          )
+        }
         renderItem={renderGameItem}
         keyExtractor={(item) => item.id}
         numColumns={1}
