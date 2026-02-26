@@ -78,6 +78,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/turtle-game" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/balloon-game" options={{ headerShown: false }} />
+        <Stack.Screen name="exercises/snake-game" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/tapping-game" options={{ headerShown: false }} />
         <Stack.Screen name="editprofile" options={{ headerShown: false }} />
         <Stack.Screen name="demo" options={{ headerShown: false }} />
