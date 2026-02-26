@@ -1,6 +1,6 @@
+import 'react-native-reanimated'; // must be at the very top
 import { auth } from '@/config/firebaseConfig';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DarkTheme,
   DefaultTheme,
@@ -15,7 +15,6 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import '../global.css'; // Import NativeWind global styles
-import 'react-native-reanimated'; // changed: must be the very first import
 
 // Prevent the splash screen from only hiding when we are ready
 SplashScreen.preventAutoHideAsync();
@@ -25,7 +24,7 @@ export default function RootLayout() {
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
-  
+
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const router = useRouter();
@@ -58,9 +57,11 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded && !initializing) {
+      console.log(`[RootLayout] Ready - user: ${!!user}, segments: ${segments[0]}`);
       SplashScreen.hideAsync();
     }
-  }, [loaded, initializing]);
+  }, [loaded, initializing, user, segments]);
+
 
   if (!loaded || initializing) {
     return (
@@ -80,7 +81,7 @@ export default function RootLayout() {
         <Stack.Screen name="exercises/tapping-game" options={{ headerShown: false }} />
         <Stack.Screen name="editprofile" options={{ headerShown: false }} />
         <Stack.Screen name="demo" options={{ headerShown: false }} />
-        <Stack.Screen name="index" options={{ headerShown: false }} /> 
+        <Stack.Screen name="index" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

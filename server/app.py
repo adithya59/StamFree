@@ -411,9 +411,11 @@ def analyze_audio():
             "stutter_score": confidence,
             "type": stutter_type,
             "problem_phoneme": final_phoneme,
+            "problem_word": culprit["word"] if is_stutter and words else None,
             "transcript": full_text,
         }
         return jsonify(response)
+
 
     finally:
         if os.path.exists(filepath):
