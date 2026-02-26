@@ -103,74 +103,116 @@ export default function CreateAccountScreen() {
     return true;
   };
 
+  // Helper to add timeout to any promise
+  const withTimeout = <T,>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms))
+    ]);
+  };
+
   const handleCreateAccount = async () => {
     if (!validateForm()) return;
     if (!selectedAvatar) {
       Alert.alert('Selection Required', 'Please choose a cute animal avatar for your child!');
       return;
     }
+    
+    // Debug: Check auth object
+    console.log("[Signup] Auth object exists:", !!auth);
+    console.log("[Signup] Auth current user:", auth?.currentUser?.uid || "none");
+    
+    if (!auth) {
+      Alert.alert("Error", "Firebase not initialized. Please restart the app.");
+      return;
+    }
+    
     setLoading(true);
+    console.log("[Signup] Starting account creation...");
+    console.log("[Signup] Email:", email);
+    
+    // Emergency timeout - force stop loading after 20 seconds no matter what
+    const emergencyTimeout = setTimeout(() => {
+      console.error("[Signup] EMERGENCY TIMEOUT - forcing loading to stop");
+      setLoading(false);
+      Alert.alert("Error", "Operation took too long. Please check your internet connection and try again.");
+    }, 20000);
+    
     try {
-      // Create user in Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
+      // Create user in Firebase Auth (15s timeout)
+      console.log("[Signup] Calling createUserWithEmailAndPassword...");
+      const userCredential = await withTimeout(
+        createUserWithEmailAndPassword(auth, email, password),
+        15000,
+        "Account creation timed out. Please check your connection."
       );
+      console.log("[Signup] User created successfully:", userCredential.user.uid);
       const user = userCredential.user;
 
-      // Update profile (display name)
-      await updateProfile(user, { displayName: childName });
+      // Update profile (non-blocking - don't wait for it)
+      console.log("[Signup] Updating profile (fire and forget)...");
+      updateProfile(user, { displayName: childName })
+        .then(() => console.log("[Signup] Profile updated successfully"))
+        .catch(err => console.warn("[Signup] Profile update failed:", err));
 
-      // Store additional user data in Firestore
-      try {
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Firestore timeout")), 5000)
-        );
+      // Store additional user data in Firestore (non-blocking)
+      console.log("[Signup] Saving to Firestore (fire and forget)...");
+      const selectedSpeechIssues = Object.entries(speechIssues)
+        .filter(([, checked]) => checked)
+        .map(([issue]) => issue);
 
-        const selectedSpeechIssues = Object.entries(speechIssues)
-          .filter(([, checked]) => checked)
-          .map(([issue]) => issue);
+      setDoc(doc(db, "users", user.uid), {
+        avatarId: selectedAvatar,
+        childName,
+        childAge,
+        parentName,
+        parentPhone,
+        email,
+        speechIssues: selectedSpeechIssues,
+        createdAt: new Date().toISOString(),
+        gameProgress: {
+          turtle: { tier: 1, level: "word" },
+          snake: { tier: 1, level: "word" },
+          balloon: { tier: 1, level: "word" },
+          onetap: { tier: 1, level: "word" },
+        },
+      })
+        .then(() => console.log("[Signup] Firestore save complete"))
+        .catch(err => console.warn("[Signup] Firestore save failed:", err));
 
-        await Promise.race([
-          setDoc(doc(db, "users", user.uid), {
-            avatarId: selectedAvatar,
-            childName,
-            childAge,
-            parentName,
-            parentPhone,
-            email,
-            speechIssues: selectedSpeechIssues,
-            createdAt: new Date().toISOString(),
-            gameProgress: {
-              turtle: { tier: 1, level: "word" },
-              snake: { tier: 1, level: "word" },
-              balloon: { tier: 1, level: "word" },
-              onetap: { tier: 1, level: "word" },
-            },
-          }),
-          timeoutPromise,
-        ]);
-      } catch (firestoreError) {
-        console.warn("Firestore save failed or timed out:", firestoreError);
-      }
+      // Store auth state locally (non-blocking)
+      console.log("[Signup] Saving to AsyncStorage (fire and forget)...");
+      AsyncStorage.setItem("authUser", JSON.stringify({ email, uid: user.uid }))
+        .then(() => console.log("[Signup] AsyncStorage save complete"))
+        .catch(err => console.warn("[Signup] AsyncStorage save failed:", err));
 
-      // Store auth state locally (legacy/backup)
-      await AsyncStorage.setItem(
-        "authUser",
-        JSON.stringify({ email, uid: user.uid })
+      // Send email verification (non-blocking)
+      console.log("[Signup] Sending verification email (fire and forget)...");
+      sendEmailVerification(user)
+        .then(() => console.log("[Signup] Verification email sent"))
+        .catch(err => console.warn("[Signup] Failed to send verification email:", err));
+
+      console.log("[Signup] SUCCESS - showing modal");
+      clearTimeout(emergencyTimeout);
+      setLoading(false); // Stop loading BEFORE showing modal
+      console.log("[Signup] Loading set to false, now showing success modal");
+      
+      // Try Alert first to confirm it works
+      Alert.alert(
+        "Success! 🎉",
+        "Your account has been created successfully!",
+        [
+          {
+            text: "Go to Dashboard",
+            onPress: () => router.replace("/(tabs)")
+          }
+        ]
       );
-
-      // Send email verification
-      try {
-        await sendEmailVerification(user);
-        console.log("Verification email sent");
-      } catch (verifyError) {
-        console.warn("Failed to send verification email:", verifyError);
-      }
-
-      setShowSuccessModal(true);
+      return; // Exit early - don't reach finally block
     } catch (error: any) {
+      console.error("[Signup] ERROR:", error);
+      console.error("[Signup] Error code:", error.code);
+      console.error("[Signup] Error message:", error.message);
       let errorMessage = "Failed to create account. Please try again.";
       if (error.code === "auth/email-already-in-use") {
         errorMessage = "This email is already in use.";
@@ -178,9 +220,13 @@ export default function CreateAccountScreen() {
         errorMessage = "Invalid email address.";
       } else if (error.code === "auth/weak-password") {
         errorMessage = "Password is too weak.";
+      } else if (error.message?.includes("timed out")) {
+        errorMessage = error.message;
       }
       Alert.alert("Error", errorMessage);
     } finally {
+      console.log("[Signup] FINALLY - setting loading to false");
+      clearTimeout(emergencyTimeout);
       setLoading(false);
     }
   };
