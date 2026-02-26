@@ -189,6 +189,20 @@ export default function Demo() {
 
   return (
     <ScreenWrapper>
+      <View className="absolute top-14 left-6 z-10">
+        <TouchableOpacity
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)');
+            }
+          }}
+          className="bg-white/80 dark:bg-slate-800/80 p-2 rounded-full shadow-sm"
+        >
+          <Ionicons name="arrow-back" size={24} color="#0D9488" />
+        </TouchableOpacity>
+      </View>
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-start', alignItems: 'center', paddingBottom: 40, paddingTop: 60 }}>
         <H1 className="text-center mb-6 text-brand-primary">Stutter Detection</H1>
 
@@ -341,14 +355,13 @@ export default function Demo() {
                   <TouchableOpacity
                     className="mt-6 bg-brand-primary py-4 rounded-2xl items-center shadow-lg shadow-brand-primary/30"
                     onPress={() => {
-                      const target = ISSUE_REDIRECTS[result.type?.toLowerCase()] || '/(tabs)';
-                      router.replace(target as any);
+                      router.replace('/(tabs)');
                     }}
                   >
                     <Text className="text-white font-extrabold text-lg">
-                      Start My {result.type} Exercise
+                      Start My {result.type} Journey
                     </Text>
-                    <Text className="text-white/70 text-xs font-medium uppercase tracking-tighter">Recommended based on your speech</Text>
+                    <Text className="text-white/70 text-xs font-medium uppercase tracking-tighter">See exercises for {result.type}</Text>
                   </TouchableOpacity>
                 )}
               </View>

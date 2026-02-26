@@ -25,43 +25,43 @@ export default function HomeScreen() {
   }, [navigation]);
 
   useFocusEffect(
-  useCallback(() => {
-    let isActive = true;
+    useCallback(() => {
+      let isActive = true;
 
-    const fetchData = async () => {
-      try {
-        const data = await getUserStats();
-        const savedType = await AsyncStorage.getItem('stutterType');
+      const fetchData = async () => {
+        try {
+          const data = await getUserStats();
+          const savedType = await AsyncStorage.getItem('stutterType');
 
-        if (isActive) {
-          setStats(data);
-          setStutterType(savedType);
+          if (isActive) {
+            setStats(data);
+            setStutterType(savedType);
+          }
+        } catch (e) {
+          console.error('Failed to load data', e);
         }
-      } catch (e) {
-        console.error('Failed to load data', e);
-      }
-    };
+      };
 
-    fetchData();
+      fetchData();
 
-    return () => { isActive = false; };
-  }, [])
-);
+      return () => { isActive = false; };
+    }, [])
+  );
 
   const renderGameItem = ({ item, index }: { item: GameConfig; index: number }) => (
     <View className="flex-1 py-2">
       <Link href={item.route as any} asChild>
         <GameCard
-            title={item.title}
-            description={item.description}
-            iconSource={item.iconSource}
-            iconName={item.iconName as any}
-            lottieSource={item.lottieSource}
-            delay={index * 100}
-            gradientColors={item.gradientColors}
-            darkGradientColors={item.darkGradientColors}
-            className="h-full"
-            onPress={() => {}} // dummy prop to satisfy types if needed, Link overrides it
+          title={item.title}
+          description={item.description}
+          iconSource={item.iconSource}
+          iconName={item.iconName as any}
+          lottieSource={item.lottieSource}
+          delay={index * 100}
+          gradientColors={item.gradientColors}
+          darkGradientColors={item.darkGradientColors}
+          className="h-full"
+          onPress={() => { }} // dummy prop to satisfy types if needed, Link overrides it
         />
       </Link>
     </View>
@@ -79,11 +79,11 @@ export default function HomeScreen() {
             </Text>
           </View>
         )}
-        <TouchableOpacity 
+        <TouchableOpacity
           className="mt-4 flex-row items-center space-x-2 rounded-xl bg-teal-50 px-4 py-3 dark:bg-teal-900/30 self-start"
           onPress={async () => {
             await AsyncStorage.removeItem('stutterType');
-            router.replace('/demo');
+            router.push('/demo');
           }}
         >
           <MaterialCommunityIcons name="refresh" size={20} color="#0D9488" />
@@ -94,52 +94,52 @@ export default function HomeScreen() {
       </View>
 
       {/* Stats Section */}
-      <Animated.View 
-        entering={FadeInDown.delay(200)} 
+      <Animated.View
+        entering={FadeInDown.delay(200)}
         className="flex-row gap-3"
       >
         <LinearGradient
-            colors={colorScheme === 'dark' ? ['#1e3a8a', '#172554'] : ['#60a5fa', '#3b82f6']} // Blue-400->600 (Light), Blue-900->950 (Dark)
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            className="flex-1 flex-row items-center p-4 shadow-sm"
-            style={{ borderRadius: 16 }}
+          colors={colorScheme === 'dark' ? ['#1e3a8a', '#172554'] : ['#60a5fa', '#3b82f6']} // Blue-400->600 (Light), Blue-900->950 (Dark)
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          className="flex-1 flex-row items-center p-4 shadow-sm"
+          style={{ borderRadius: 16 }}
         >
-            <View className="bg-white/20 p-2 rounded-full mr-3">
-                <MaterialCommunityIcons name="calendar-today" size={20} color="#FFFFFF" />
-            </View>
-            <View>
-                <Text className="text-xs text-blue-50 uppercase font-medium">Sessions</Text>
-                <Text className="text-xl font-bold text-white">
-                    {stats ? stats.sessionsThisWeek : '-'}
-                </Text>
-            </View>
+          <View className="bg-white/20 p-2 rounded-full mr-3">
+            <MaterialCommunityIcons name="calendar-today" size={20} color="#FFFFFF" />
+          </View>
+          <View>
+            <Text className="text-xs text-blue-50 uppercase font-medium">Sessions</Text>
+            <Text className="text-xl font-bold text-white">
+              {stats ? stats.sessionsThisWeek : '-'}
+            </Text>
+          </View>
         </LinearGradient>
 
         <LinearGradient
-            colors={colorScheme === 'dark' ? ['#78350f', '#451a03'] : ['#fbbf24', '#d97706']} // Amber-400->600 (Light), Amber-900->950 (Dark)
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            className="flex-1 flex-row items-center p-4 shadow-sm"
-            style={{ borderRadius: 16 }}
+          colors={colorScheme === 'dark' ? ['#78350f', '#451a03'] : ['#fbbf24', '#d97706']} // Amber-400->600 (Light), Amber-900->950 (Dark)
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          className="flex-1 flex-row items-center p-4 shadow-sm"
+          style={{ borderRadius: 16 }}
         >
-            <View className="bg-white/20 p-2 rounded-full mr-3">
-                <MaterialCommunityIcons name="star" size={20} color="#FFFFFF" />
-            </View>
-            <View>
-                <Text className="text-xs text-amber-50 uppercase font-medium">Streak</Text>
-                <Text className="text-xl font-bold text-white">
-                    {stats ? stats.currentStreak : '-'} <Text className="text-xs font-normal text-white/80">days</Text>
-                </Text>
-            </View>
+          <View className="bg-white/20 p-2 rounded-full mr-3">
+            <MaterialCommunityIcons name="star" size={20} color="#FFFFFF" />
+          </View>
+          <View>
+            <Text className="text-xs text-amber-50 uppercase font-medium">Streak</Text>
+            <Text className="text-xl font-bold text-white">
+              {stats ? stats.currentStreak : '-'} <Text className="text-xs font-normal text-white/80">days</Text>
+            </Text>
+          </View>
         </LinearGradient>
       </Animated.View>
     </View>
   );
 
   return (
-    <ScreenWrapper 
-        gradientColors={colorScheme === 'dark' ? ['#0f172a', '#020617'] : ['#f8fafc', '#e2e8f0']} // Slate-50->200 (Light), Slate-900->950 (Dark)
+    <ScreenWrapper
+      gradientColors={colorScheme === 'dark' ? ['#0f172a', '#020617'] : ['#f8fafc', '#e2e8f0']} // Slate-50->200 (Light), Slate-900->950 (Dark)
     >
       <FlatList
         data={
@@ -147,8 +147,8 @@ export default function HomeScreen() {
             ? GAMES
             : GAMES.filter(
               game =>
-              game.type === stutterType || game.type === 'common'
-          )
+                game.type === stutterType || game.type === 'common'
+            )
         }
         renderItem={renderGameItem}
         keyExtractor={(item) => item.id}

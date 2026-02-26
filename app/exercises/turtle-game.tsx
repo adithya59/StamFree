@@ -18,7 +18,7 @@ import { startRecording, stopRecording } from '../../services/audioService';
 import { analyzeTurtleAudio } from '@/services/turtleAnalysis';
 import { calculateSpeakingRate } from '@/services/turtleLogic';
 import { TurtleVideo } from '../../components/turtle/TurtleVideo';
-import { getNextTurtleSession, recordTurtleResult, type TurtleContent } from '@/services/turtlePlaylist';
+import { getNextTurtleSession, recordTurtleResult, updateTurtlePosition, clearTurtleSession, type TurtleContent } from '@/services/turtlePlaylist';
 import { auth } from '@/config/firebaseConfig';
 import { Button } from '@/components/ui/Button';
 import { JourneyCompleteModal } from '@/components/turtle/JourneyCompleteModal';
@@ -58,9 +58,11 @@ export default function TalkingTurtle() {
   useEffect(() => {
     const loadSession = async () => {
       if (auth.currentUser) {
-        const content = await getNextTurtleSession(auth.currentUser.uid);
+        const { content, lastLap, lastIndex } = await getNextTurtleSession(auth.currentUser.uid);
         if (content.length > 0) {
           setSessionContent(content);
+          setCurrentLap(lastLap);
+          setCurrentIndex(lastIndex);
         } else {
           // Fallback with correct literal types
           const dummyDeck: TurtleContent[] = [
@@ -320,6 +322,11 @@ export default function TalkingTurtle() {
     // The actual "next step" logic will happen after the video finishes
     const nextIndex = currentIndex + 1;
     setCurrentIndex(nextIndex);
+
+    // PERSIST PROGRESS: Save current position
+    if (auth.currentUser) {
+      updateTurtlePosition(auth.currentUser.uid, currentLap, nextIndex);
+    }
   };
 
   // 2. Called by TurtleVideo when the segment finishes playing
@@ -374,6 +381,11 @@ export default function TalkingTurtle() {
       setCurrentLap(nextLapIndex);
       setCurrentIndex(0);
       setFeedback(`🐢 Journey ${nextLapIndex + 1} begins!`);
+
+      // PERSIST PROGRESS: Save lap start
+      if (auth.currentUser) {
+        updateTurtlePosition(auth.currentUser.uid, nextLapIndex, 0);
+      }
     } else {
       // All journeys complete
       setIsFinished(true);
@@ -537,7 +549,11 @@ export default function TalkingTurtle() {
             </View>
             <Text className="text-3xl font-black mb-2 text-slate-800 text-center">Journey Complete!</Text>
             <Text className="text-lg text-slate-500 mb-8 text-center leading-6">You've mastered all 3 adventures! The Turtle is proud.</Text>
-            <Button title="Finish" onPress={() => { setIsFinished(false); router.back(); }} variant="primary" className="w-full rounded-2xl" />
+            <Button title="Finish" onPress={() => {
+              setIsFinished(false);
+              if (auth.currentUser) clearTurtleSession(auth.currentUser.uid);
+              router.back();
+            }} variant="primary" className="w-full rounded-2xl" />
           </View>
         </View>
       </Modal>

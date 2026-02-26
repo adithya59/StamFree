@@ -49,7 +49,7 @@ export const GAMES: GameConfig[] = [
     id: 'balloon',
     title: 'Balloon Breath',
     description: 'Gentle easy onset practice',
-    iconName: 'balloon', 
+    iconName: 'balloon',
     lottieSource: require('@/assets/lottie/balloon.json'),
     gradientColors: ['#38bdf8', '#0369a1'], // Sky-400 -> Sky-700
     darkGradientColors: ['#075985', '#0c4a6e'], // Sky-800 -> Sky-900

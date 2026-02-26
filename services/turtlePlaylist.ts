@@ -17,7 +17,7 @@ export interface TurtlePlaylist {
   activeItems: string[]; // List of IDs (e.g., ['t1_1', 't1_2', ...])
   masteredItems: string[];
   lockedItems: string[]; // Remaining pool IDs
-  
+
   // Track metrics for mastery
   itemStats: {
     [itemId: string]: {
@@ -26,12 +26,17 @@ export interface TurtlePlaylist {
       lastPlayed: string; // ISO Date
     }
   };
-  
+
   // NEW: XP Progression System
   xp: number;
   tier1Unlocked: boolean; // Always true
   tier2Unlocked: boolean; // Unlocks at 500 XP
   tier3Unlocked: boolean; // Unlocks at 1500 XP
+
+  // NEW: Session Persistence
+  currentSessionIds?: string[];
+  lastLap?: number;
+  lastIndex?: number;
 }
 
 // --- Constants ---
@@ -58,7 +63,7 @@ export async function initializeTurtlePlaylist(userId: string): Promise<TurtlePl
 
   // Fetch full pool from Firestore (New specific collection)
   const poolSnap = await getDocs(collection(db, 'turtle_content_pool'));
-  
+
   const allItems: TurtleContent[] = poolSnap.docs.map(d => {
     const data = d.data();
     return {
@@ -71,7 +76,7 @@ export async function initializeTurtlePlaylist(userId: string): Promise<TurtlePl
 
   // Sort by Tier (1 -> 2 -> 3) then Length
   allItems.sort((a, b) => a.tier - b.tier || a.wordCount - b.wordCount);
-  
+
   const allIds = allItems.map(i => i.id);
 
   if (allIds.length === 0) {
@@ -109,35 +114,44 @@ export async function initializeTurtlePlaylist(userId: string): Promise<TurtlePl
   return newPlaylist;
 }
 
-export async function getNextTurtleSession(userId: string): Promise<TurtleContent[][]> {
+export async function getNextTurtleSession(userId: string): Promise<{ content: TurtleContent[][], lastLap: number, lastIndex: number }> {
   let playlist = await initializeSnakePlaylistFallback(userId);
-  let hasChanges = false;
+  let hasSession = !!playlist.currentSessionIds && playlist.currentSessionIds.length === SESSION_SIZE;
 
-  // Ensure we have enough active items for a full session (12)
-  if (playlist.activeItems.length < SESSION_SIZE) {
-    const needed = SESSION_SIZE - playlist.activeItems.length;
-    
-    // Pull from locked
-    if (playlist.lockedItems.length > 0) {
+  let sessionIds: string[] = [];
+
+  if (hasSession) {
+    sessionIds = playlist.currentSessionIds!;
+    console.log('[TurtlePlaylist] Resuming existing session');
+  } else {
+    console.log('[TurtlePlaylist] Generating new session');
+    // Ensure we have enough active items for a full session (12)
+    if (playlist.activeItems.length < SESSION_SIZE) {
+      const needed = SESSION_SIZE - playlist.activeItems.length;
+
+      // Pull from locked
+      if (playlist.lockedItems.length > 0) {
         const toAdd = playlist.lockedItems.splice(0, needed);
         playlist.activeItems.push(...toAdd);
-        
-        // Update DB immediately to reserve these items
-        const playlistRef = doc(db, `users/${userId}/turtle_progress/playlist`);
-        await updateDoc(playlistRef, {
-            activeItems: playlist.activeItems,
-            lockedItems: playlist.lockedItems
-        });
+      }
     }
+
+    // Take up to 12 items from active deck.
+    sessionIds = playlist.activeItems.slice(0, SESSION_SIZE);
+
+    // Save this session and reset position
+    const playlistRef = doc(db, `users/${userId}/turtle_progress/playlist`);
+    await updateDoc(playlistRef, {
+      currentSessionIds: sessionIds,
+      activeItems: playlist.activeItems,
+      lockedItems: playlist.lockedItems,
+      lastLap: 0,
+      lastIndex: 0
+    });
   }
-  
-  // 1. Fetch Session Items (Aim for 12 unique)
-  // Logic: Take up to 12 items from active deck.
-  // If < 12 available (even after pull), just cycle what we have.
-  const sessionIds = playlist.activeItems.slice(0, SESSION_SIZE);
-  
+
   const fetchedItems: TurtleContent[] = [];
-  
+
   for (const id of sessionIds) {
     const docRef = doc(db, 'turtle_content_pool', id);
     const snap = await getDoc(docRef);
@@ -154,27 +168,47 @@ export async function getNextTurtleSession(userId: string): Promise<TurtleConten
     }
   }
 
-  // Shuffle for variety each session
-  const shuffled = shuffleArray(fetchedItems);
+  // Use a fixed seed for shuffling if resuming, or don't shuffle session internal order if we want true persistence.
+  // Actually, we should probably just store the shuffled order as currentSessionIds.
+  // Let's refine: if it's a new session, we shuffle then save.
 
-  // 2. Distribute into 3 Journeys
-  // Journey 1: Items 0-3
-  // Journey 2: Items 4-7
-  // Journey 3: Items 8-11
-  // If we have fewer than 12 items total, wrap around.
-  const journey1: TurtleContent[] = [];
-  const journey2: TurtleContent[] = [];
-  const journey3: TurtleContent[] = [];
-
-  for (let i = 0; i < ITEMS_PER_JOURNEY; i++) {
-     if (shuffled.length > 0) {
-        journey1.push(shuffled[i % shuffled.length]);
-        journey2.push(shuffled[(i + 4) % shuffled.length]);
-        journey3.push(shuffled[(i + 8) % shuffled.length]);
-     }
+  let finalItems = fetchedItems;
+  if (!hasSession) {
+    finalItems = shuffleArray(fetchedItems);
+    const shuffledIds = finalItems.map(i => i.id);
+    const playlistRef = doc(db, `users/${userId}/turtle_progress/playlist`);
+    await updateDoc(playlistRef, {
+      currentSessionIds: shuffledIds
+    });
   }
-  
-  return [journey1, journey2, journey3];
+
+  // Distribute into 3 Journeys
+  const journey1: TurtleContent[] = finalItems.slice(0, 4);
+  const journey2: TurtleContent[] = finalItems.slice(4, 8);
+  const journey3: TurtleContent[] = finalItems.slice(8, 12);
+
+  return {
+    content: [journey1, journey2, journey3],
+    lastLap: playlist.lastLap || 0,
+    lastIndex: playlist.lastIndex || 0
+  };
+}
+
+export async function updateTurtlePosition(userId: string, lap: number, index: number) {
+  const playlistRef = doc(db, `users/${userId}/turtle_progress/playlist`);
+  await updateDoc(playlistRef, {
+    lastLap: lap,
+    lastIndex: index
+  });
+}
+
+export async function clearTurtleSession(userId: string) {
+  const playlistRef = doc(db, `users/${userId}/turtle_progress/playlist`);
+  await updateDoc(playlistRef, {
+    currentSessionIds: null,
+    lastLap: 0,
+    lastIndex: 0
+  });
 }
 
 // Helper: Fisher-Yates shuffle
@@ -189,20 +223,20 @@ function shuffleArray<T>(array: T[]): T[] {
 
 // Helper to avoid circular dependency or import issues if reuse
 async function initializeSnakePlaylistFallback(userId: string) {
-    return initializeTurtlePlaylist(userId);
+  return initializeTurtlePlaylist(userId);
 }
 
 /**
  * Updates stats after a game session and checks for Mastery ("The Slide").
  */
 export async function recordTurtleResult(
-  userId: string, 
-  itemId: string, 
+  userId: string,
+  itemId: string,
   isSuccess: boolean
 ): Promise<{ leveledUp: boolean; xpAwarded: number }> {
   const playlistRef = doc(db, `users/${userId}/turtle_progress/playlist`);
   const snap = await getDoc(playlistRef);
-  
+
   if (!snap.exists()) return { leveledUp: false, xpAwarded: 0 };
 
   const playlist = snap.data() as TurtlePlaylist;
@@ -225,20 +259,20 @@ export async function recordTurtleResult(
     // Fetch item to determine tier
     const itemRef = doc(db, 'turtle_content_pool', itemId);
     const itemSnap = await getDoc(itemRef);
-    
+
     if (itemSnap.exists()) {
       const itemData = itemSnap.data();
       const tier = itemData.tier as 1 | 2 | 3;
-      
+
       // Award XP based on tier
       switch (tier) {
         case 1: xpAwarded = 10; break;
         case 2: xpAwarded = 25; break;
         case 3: xpAwarded = 50; break;
       }
-      
+
       playlist.xp = (playlist.xp || 0) + xpAwarded;
-      
+
       // Check unlock thresholds
       if (playlist.xp >= 500 && !playlist.tier2Unlocked) {
         playlist.tier2Unlocked = true;
@@ -252,24 +286,28 @@ export async function recordTurtleResult(
   }
 
   // Only master if CURRENT attempt was successful
+  // Always remove from activeItems so we can re-insert at the end (if not mastered)
+  playlist.activeItems = playlist.activeItems.filter(id => id !== itemId);
+
   if (isSuccess && stats.attempts >= MASTERY_ATTEMPTS && ratio >= MASTERY_RATIO) {
     leveledUp = true;
-    
+
     // 1. Move to Mastered
     if (!playlist.masteredItems.includes(itemId)) {
-        playlist.masteredItems.push(itemId);
+      playlist.masteredItems.push(itemId);
     }
-    
-    // 2. Remove from Active
-    playlist.activeItems = playlist.activeItems.filter(id => id !== itemId);
 
-    // 3. Pull from Locked
+    // 2. Pull from Locked to keep active pool size stable
     if (playlist.lockedItems.length > 0) {
-        const newItem = playlist.lockedItems.shift(); 
-        if (newItem) {
-            playlist.activeItems.push(newItem);
-        }
+      const newItem = playlist.lockedItems.shift();
+      if (newItem) {
+        playlist.activeItems.push(newItem);
+      }
     }
+  } else {
+    // NOT MASTERED (Failure or needs more practice)
+    // Push it back to the end of activeItems so it doesn't repeat immediately
+    playlist.activeItems.push(itemId);
   }
 
   // Save changes
