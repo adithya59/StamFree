@@ -16,7 +16,7 @@ export default function HomeScreen() {
   const navigation = useNavigation();
   const [stats, setStats] = useState<UserStats | null>(null);
   const colorScheme = useColorScheme();
-  const [stutterType, setStutterType] = useState<string | null>(null);
+  const [stutterTypes, setStutterTypes] = useState<string[]>([]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -31,11 +31,18 @@ export default function HomeScreen() {
       const fetchData = async () => {
         try {
           const data = await getUserStats();
-          const savedType = await AsyncStorage.getItem('stutterType');
+          // Support both old 'stutterType' and new 'stutterTypes' format
+          const savedTypes = await AsyncStorage.getItem('stutterTypes');
+          const oldSavedType = await AsyncStorage.getItem('stutterType');
 
           if (isActive) {
             setStats(data);
-            setStutterType(savedType);
+            if (savedTypes) {
+              setStutterTypes(JSON.parse(savedTypes));
+            } else if (oldSavedType) {
+              // Migration: convert old format to new
+              setStutterTypes([oldSavedType]);
+            }
           }
         } catch (e) {
           console.error('Failed to load data', e);
@@ -72,17 +79,18 @@ export default function HomeScreen() {
       <View className="pt-2 pb-6">
         <H1 className="mb-2">Welcome Back! 👋</H1>
         <P>Choose an exercise to get started today.</P>
-        {stutterType && (
+        {stutterTypes.length > 0 && stutterTypes[0] !== 'fluent' && (
           <View className="mt-2 bg-teal-100 dark:bg-teal-900/30 px-4 py-2 rounded-xl self-start">
             <Text className="text-teal-700 dark:text-teal-300 font-semibold">
-              Your Therapy Plan: {stutterType.charAt(0).toUpperCase() + stutterType.slice(1)}
+              Your Therapy Plan: {stutterTypes.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' + ')}
             </Text>
           </View>
         )}
         <TouchableOpacity
           className="mt-4 flex-row items-center space-x-2 rounded-xl bg-teal-50 px-4 py-3 dark:bg-teal-900/30 self-start"
           onPress={async () => {
-            await AsyncStorage.removeItem('stutterType');
+            await AsyncStorage.removeItem('stutterTypes');
+            await AsyncStorage.removeItem('stutterType'); // Remove old format too
             router.push('/demo');
           }}
         >
@@ -143,11 +151,11 @@ export default function HomeScreen() {
     >
       <FlatList
         data={
-          !stutterType
+          stutterTypes.length === 0
             ? GAMES
             : GAMES.filter(
               game =>
-                game.type === stutterType || game.type === 'common'
+                stutterTypes.includes(game.type) || game.type === 'common'
             )
         }
         renderItem={renderGameItem}

@@ -52,9 +52,11 @@ export default function LoginScreen() {
         JSON.stringify({ email: user.email, uid: user.uid })
       );
 
-      const savedType = await AsyncStorage.getItem('stutterType');
+      // Check both new and old format for onboarding completion
+      const savedTypes = await AsyncStorage.getItem('stutterTypes');
+      const oldSavedType = await AsyncStorage.getItem('stutterType');
 
-      if (!savedType) {
+      if (!savedTypes && !oldSavedType) {
         router.replace('/detection-intro');
       } else {
         router.replace('/(tabs)');

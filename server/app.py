@@ -1,7 +1,6 @@
 import os
 import io
 import time
-import uuid
 import random
 import numpy as np
 import librosa
@@ -19,11 +18,6 @@ import soundfile as sf
 
 # ============================================================================
 # StamFree Backend - WavLM Speech Analysis Server
-# ============================================================================
-# STARTUP OPTIMIZATION:
-# - First request takes ~7-8s due to model warmup (cold start)
-# - To eliminate this latency, call POST /warmup immediately after server starts
-# - This caches the model in GPU/CPU memory for subsequent requests (~1-2s each)
 # ============================================================================
 
 # --- NLTK SETUP ---
@@ -68,7 +62,6 @@ ALLOWED_EXTENSIONS = {'wav', 'm4a', 'mp3', 'webm'}
 SPEECH_PROB_MIN = float(os.environ.get("SPEECH_PROB_MIN", "0.35"))
 PITCHED_RATIO_MIN = float(os.environ.get("PITCHED_RATIO_MIN", "0.15"))
 PROGRESSION_CONFIDENCE = 0.75
-AUTO_WARMUP = os.environ.get("AUTO_WARMUP", os.environ.get("WARMUP_ON_START", "true")).lower() == "true"
 
 # --- FLASK SETUP ---
 app = Flask(__name__)
@@ -140,11 +133,11 @@ except Exception as e:
 
 # --- HELPER FUNCTIONS ---
 
-def predict_file(audio_input):
+def predict_file(audio_input, return_all_scores=False):
     """
     Manual prediction using WavLM.
     Accepts a filepath (str) OR a pre-loaded numpy array.
-    Returns: (label_string, confidence_float)
+    Returns: (label_string, confidence_float) or (label_string, confidence_float, all_scores_dict)
     """
     # 1. Load Audio if input is a path
     if isinstance(audio_input, str):
@@ -186,6 +179,20 @@ def predict_file(audio_input):
     # 6. Get Winner
     score, id = torch.max(probs, dim=-1)
     label = model.config.id2label[id.item()]
+
+    if return_all_scores:
+        # Build dict of all class probabilities
+        all_scores = {}
+        probs_list = probs[0].tolist()
+        for idx, prob in enumerate(probs_list):
+            class_label = model.config.id2label[idx]
+            # Normalize label: "nonstutter_prolongation" -> "prolongation"
+            if "_" in class_label:
+                clean_label = class_label.split("_")[1].lower()
+            else:
+                clean_label = class_label.lower()
+            all_scores[clean_label] = round(prob, 4)
+        return label, score.item(), all_scores
 
     return label, score.item()
 
@@ -379,8 +386,8 @@ def analyze_audio():
     file.save(filepath)
 
     try:
-        # 1. RUN WAVLM PREDICTION
-        label, confidence = predict_file(filepath)
+        # 1. RUN WAVLM PREDICTION (with all scores for multi-type detection)
+        label, confidence, all_scores = predict_file(filepath, return_all_scores=True)
 
         # Logic: If label contains "fluent", it's fluent. Else it's a stutter.
         is_stutter = "fluent" not in label.lower()
@@ -410,6 +417,7 @@ def analyze_audio():
             "is_stutter": is_stutter,
             "stutter_score": confidence,
             "type": stutter_type,
+            "all_scores": all_scores,  # NEW: All class probabilities for multi-type detection
             "problem_phoneme": final_phoneme,
             "problem_word": culprit["word"] if is_stutter and words else None,
             "transcript": full_text,
@@ -540,7 +548,6 @@ def analyze_snake():
                 is_humming = detect_nasal_phoneme_acoustic(filepath)
                 if is_humming:
                     phoneme_match = True  # Good enough!
-                    print(f"✅ Detected nasal humming for target '{target_lower}'")
 
         # 3. APPLY DEDUCTION LOGIC
         # RULE 1: CONTINUITY
@@ -747,8 +754,6 @@ def analyze_tapping():
             trans_phonemes = [p for p in trans_phonemes_raw if p not in [" ", "'"]]
             trans_phonemes = ["".join([c for c in p if not c.isdigit()]) for p in trans_phonemes]
             
-            print(f"DEBUG: Transcript Phonemes: {trans_phonemes}")
-            
             # 2. Sequential Sub-sequence Search
             current_idx = 0
             for i, syl in enumerate(syllables):
@@ -763,9 +768,6 @@ def analyze_tapping():
                     if target_syl in cleaned_transcript:
                         match_found = True
                         syllable_matches[i] = True
-                        print(f"DEBUG: Matched syllable '{syl}' in transcript")
-                    else:
-                        print(f"DEBUG: Failed to match '{syl}' in '{cleaned_transcript}'")
                         
                 except Exception as e:
                     print(f"Error matching syllable '{syl}': {e}")
@@ -1057,43 +1059,6 @@ def analyze_turtle():
                 pass
 
 
-# --- WARMUP ENDPOINT (for cold-start optimization) ---
-def _run_warmup_inference():
-    """Run a dummy forward pass to cache weights and kernels."""
-    dummy_audio = np.zeros(int(0.5 * 16000), dtype=np.float32)
-
-    inputs = feature_extractor(
-        dummy_audio,
-        sampling_rate=16000,
-        return_tensors="pt",
-        padding=True,
-    )
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-
-    with torch.no_grad():
-        _ = model(**inputs).logits
-
-
-@app.route("/warmup", methods=["POST"])
-def warmup():
-    """
-    Initialize model inference on a dummy audio to cache everything in memory.
-    Call this endpoint once after server startup to avoid latency on first real request.
-    """
-    try:
-        _run_warmup_inference()
-
-        return jsonify({
-            "status": "warmed_up",
-            "model": "WavLM",
-            "device": device,
-            "message": "Model is now cached in memory for optimal performance"
-        }), 200
-    except Exception as e:
-        print(f"⚠️ Warmup failed: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
 # --- HEALTH CHECK ---
 @app.route("/health", methods=["GET"])
 def health():
@@ -1102,14 +1067,6 @@ def health():
         "model": "WavLM", 
         "device": device
     }), 200
-
-
-if AUTO_WARMUP:
-    try:
-        _run_warmup_inference()
-        print("✅ Warmup on start complete")
-    except Exception as e:
-        print(f"⚠️ Warmup on start failed: {e}")
 
 
 if __name__ == "__main__":

@@ -18,13 +18,6 @@ import { useRouter } from 'expo-router';
 
 const STORY_TEXT = "The Quick Adventure\n\nThe quick brown fox jumps over a lazy dog near the quiet zoo. Zoe and Jack bring five bright yellow balloons and a blue backpack. “This thin path is very rocky,” Jack says. They walk through thick grass and splash in the fresh water. Suddenly, strong winds blow, and the branches shake. Zoe shouts, “Wait for me!” and waves her hand. After the exciting journey, they relax and enjoy warm vanilla juice.";
 
-const ISSUE_REDIRECTS: Record<string, string> = {
-  'blocking': '/exercises/balloon-game',
-  'prolongation': '/exercises/turtle-game',
-  'repetition': '/exercises/tapping-game',
-  'block': '/exercises/balloon-game',
-};
-
 
 
 
@@ -170,14 +163,36 @@ export default function Demo() {
       setResult(data);
       setThinkingMessage(undefined);
 
-      // 🔥 PERSONALIZATION LOGIC
-      if (data.is_stutter && data.type) {
-        let detectedType = data.type.toLowerCase();
-
-        if (detectedType === 'block') {
-          detectedType = 'blocking';
+      // 🔥 PERSONALIZATION LOGIC - Support multiple stutter types
+      if (data.is_stutter && data.all_scores) {
+        // Detect all types above 25% threshold
+        const THRESHOLD = 0.25;
+        const detectedTypes: string[] = [];
+        
+        for (const [type, score] of Object.entries(data.all_scores)) {
+          if ((score as number) >= THRESHOLD) {
+            let normalizedType = type.toLowerCase();
+            if (normalizedType === 'block') normalizedType = 'blocking';
+            detectedTypes.push(normalizedType);
+          }
         }
-        await AsyncStorage.setItem('stutterType', detectedType);
+        
+        // If no types above threshold, use the primary detected type
+        if (detectedTypes.length === 0 && data.type) {
+          let primaryType = data.type.toLowerCase();
+          if (primaryType === 'block') primaryType = 'blocking';
+          detectedTypes.push(primaryType);
+        }
+        
+        await AsyncStorage.setItem('stutterTypes', JSON.stringify(detectedTypes));
+      } else if (data.is_stutter && data.type) {
+        // Fallback: single type detected (no all_scores)
+        let detectedType = data.type.toLowerCase();
+        if (detectedType === 'block') detectedType = 'blocking';
+        await AsyncStorage.setItem('stutterTypes', JSON.stringify([detectedType]));
+      } else {
+        // No stutter detected - mark onboarding as complete with "fluent" type
+        await AsyncStorage.setItem('stutterTypes', JSON.stringify(['fluent']));
       }
     } catch (error) {
       setThinkingMessage('Couldn\'t reach the server. Check IP, then retry.');

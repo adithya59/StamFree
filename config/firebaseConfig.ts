@@ -37,8 +37,6 @@ if (Platform.OS === 'web') {
   });
 }
 
-console.log('[FirebaseConfig] Auth initialized.');
-
 const db = getFirestore(app);
 
 export { auth, db };

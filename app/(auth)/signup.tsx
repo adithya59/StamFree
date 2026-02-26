@@ -6,7 +6,7 @@ import { H1, H2, P, Label } from '@/components/ui/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, router } from 'expo-router';
-import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, signOut, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
@@ -41,7 +41,6 @@ export default function CreateAccountScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [speechIssues, setSpeechIssues] = useState<Record<string, boolean>>({});
   const [showPassword, setShowPassword] = useState(false);
@@ -118,45 +117,32 @@ export default function CreateAccountScreen() {
       return;
     }
     
-    // Debug: Check auth object
-    console.log("[Signup] Auth object exists:", !!auth);
-    console.log("[Signup] Auth current user:", auth?.currentUser?.uid || "none");
-    
     if (!auth) {
       Alert.alert("Error", "Firebase not initialized. Please restart the app.");
       return;
     }
     
     setLoading(true);
-    console.log("[Signup] Starting account creation...");
-    console.log("[Signup] Email:", email);
     
     // Emergency timeout - force stop loading after 20 seconds no matter what
     const emergencyTimeout = setTimeout(() => {
-      console.error("[Signup] EMERGENCY TIMEOUT - forcing loading to stop");
       setLoading(false);
       Alert.alert("Error", "Operation took too long. Please check your internet connection and try again.");
     }, 20000);
     
     try {
       // Create user in Firebase Auth (15s timeout)
-      console.log("[Signup] Calling createUserWithEmailAndPassword...");
       const userCredential = await withTimeout(
         createUserWithEmailAndPassword(auth, email, password),
         15000,
         "Account creation timed out. Please check your connection."
       );
-      console.log("[Signup] User created successfully:", userCredential.user.uid);
       const user = userCredential.user;
 
       // Update profile (non-blocking - don't wait for it)
-      console.log("[Signup] Updating profile (fire and forget)...");
-      updateProfile(user, { displayName: childName })
-        .then(() => console.log("[Signup] Profile updated successfully"))
-        .catch(err => console.warn("[Signup] Profile update failed:", err));
+      updateProfile(user, { displayName: childName }).catch(() => {});
 
       // Store additional user data in Firestore (non-blocking)
-      console.log("[Signup] Saving to Firestore (fire and forget)...");
       const selectedSpeechIssues = Object.entries(speechIssues)
         .filter(([, checked]) => checked)
         .map(([issue]) => issue);
@@ -176,43 +162,31 @@ export default function CreateAccountScreen() {
           balloon: { tier: 1, level: "word" },
           onetap: { tier: 1, level: "word" },
         },
-      })
-        .then(() => console.log("[Signup] Firestore save complete"))
-        .catch(err => console.warn("[Signup] Firestore save failed:", err));
+      }).catch(() => {});
 
       // Store auth state locally (non-blocking)
-      console.log("[Signup] Saving to AsyncStorage (fire and forget)...");
-      AsyncStorage.setItem("authUser", JSON.stringify({ email, uid: user.uid }))
-        .then(() => console.log("[Signup] AsyncStorage save complete"))
-        .catch(err => console.warn("[Signup] AsyncStorage save failed:", err));
+      AsyncStorage.setItem("authUser", JSON.stringify({ email, uid: user.uid })).catch(() => {});
 
-      // Send email verification (non-blocking)
-      console.log("[Signup] Sending verification email (fire and forget)...");
-      sendEmailVerification(user)
-        .then(() => console.log("[Signup] Verification email sent"))
-        .catch(err => console.warn("[Signup] Failed to send verification email:", err));
+      // Send verification email (fire and forget)
+      sendEmailVerification(user).catch(() => {});
 
-      console.log("[Signup] SUCCESS - showing modal");
-      clearTimeout(emergencyTimeout);
-      setLoading(false); // Stop loading BEFORE showing modal
-      console.log("[Signup] Loading set to false, now showing success modal");
-      
-      // Try Alert first to confirm it works
-      Alert.alert(
-        "Success! 🎉",
-        "Your account has been created successfully!",
-        [
-          {
-            text: "Go to Dashboard",
-            onPress: () => router.replace("/(tabs)")
-          }
-        ]
+      // Sign out the user immediately - they must verify email and login manually  
+      const signOutPromise = signOut(auth);
+      const signOutTimeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("SignOut timeout")), 3000)
       );
-      return; // Exit early - don't reach finally block
+      await Promise.race([signOutPromise, signOutTimeout]).catch(() => {});
+
+      // Clear any stored auth state
+      AsyncStorage.removeItem("authUser").catch(() => {});
+
+      clearTimeout(emergencyTimeout);
+      setLoading(false);
+      
+      // Navigate to email verification screen
+      router.replace("/(auth)/email-verification");
+      return;
     } catch (error: any) {
-      console.error("[Signup] ERROR:", error);
-      console.error("[Signup] Error code:", error.code);
-      console.error("[Signup] Error message:", error.message);
       let errorMessage = "Failed to create account. Please try again.";
       if (error.code === "auth/email-already-in-use") {
         errorMessage = "This email is already in use.";
@@ -225,15 +199,9 @@ export default function CreateAccountScreen() {
       }
       Alert.alert("Error", errorMessage);
     } finally {
-      console.log("[Signup] FINALLY - setting loading to false");
       clearTimeout(emergencyTimeout);
       setLoading(false);
     }
-  };
-
-  const handleSuccessContinue = () => {
-    setShowSuccessModal(false);
-    router.replace("/(auth)/email-verification");
   };
 
   return (
@@ -451,34 +419,6 @@ export default function CreateAccountScreen() {
                 variant="ghost" 
                 onPress={() => setShowAvatarModal(false)} 
                 className="w-full"
-            />
-          </View>
-        </View>
-      </Modal>
-
-      {/* Success Modal */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={showSuccessModal}
-        onRequestClose={handleSuccessContinue}
-      >
-        <View className="flex-1 bg-black/60 justify-center items-center p-5">
-          <View className="bg-white dark:bg-slate-800 rounded-3xl p-8 items-center w-full max-w-sm shadow-xl">
-            <View className="w-16 h-16 bg-green-100 rounded-full items-center justify-center mb-4">
-               <Text className="text-3xl">🎉</Text>
-            </View>
-            <H2 className="text-center mb-2">Success!</H2>
-            <P className="text-center mb-6 text-slate-500">
-              Your account has been created successfully. Welcome to StamFree!
-            </P>
-            <Button
-              title="Go to Dashboard"
-              onPress={() => {
-                setShowSuccessModal(false);
-                router.replace("/(tabs)");
-              }}
-              className="w-full"
             />
           </View>
         </View>
