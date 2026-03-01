@@ -77,7 +77,6 @@ export function useTappingSession() {
 
             recordingRef.current = recording;
             startTimeRef.current = Date.now();
-            console.log('🎙️ Tapping Session Started');
 
         } catch (error) {
             console.error('Failed to start recording:', error);
@@ -100,25 +99,31 @@ export function useTappingSession() {
             taps: [...prev.taps, timestamp]
         }));
 
-        console.log(`👆 Tap at ${timestamp.toFixed(2)}s`);
+
     }, [state.isRecording]);
 
     const stopSession = useCallback(async (targetWord: string, syllables: string[], tier: number) => {
-        if (!recordingRef.current) return;
+        const recording = recordingRef.current;
+        if (!recording) return;
+
+        // Null ref immediately to prevent double-calls
+        recordingRef.current = null;
 
         try {
             setState(prev => ({ ...prev, isRecording: false, isProcessing: true }));
 
-            await recordingRef.current.stopAndUnloadAsync();
-            const uri = recordingRef.current.getURI();
+            try {
+                await recording.stopAndUnloadAsync();
+            } catch (unloadErr) {
+                // Already unloaded — safe to ignore
+            }
+            const uri = recording.getURI();
 
             if (!uri) {
                 throw new Error('No recording URI found');
             }
 
-            // Use ref to ensure we have all taps
             const finalTaps = tapsRef.current;
-            console.log('Analyzing tapping session...', { tapsCount: finalTaps.length, targetWord });
 
             // Analyze
             const result = await analyzeTappingAudio({
@@ -128,7 +133,7 @@ export function useTappingSession() {
                 syllables
             });
 
-            console.log('✅ Analysis Result:', result);
+            console.log('✅ Result:', { accuracy: result.accuracy, feedback: result.feedback, transcript: result.transcript });
 
             setState(prev => ({
                 ...prev,
@@ -150,7 +155,7 @@ export function useTappingSession() {
                         syllables: syllables.length,
                         syllable_matches: result.syllable_matches
                     });
-                    console.log('💾 Session saved to Firestore');
+
                 } catch (saveError) {
                     console.error('Failed to save session:', saveError);
                     // Don't fail the UI, just log the error

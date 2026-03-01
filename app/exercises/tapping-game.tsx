@@ -1,53 +1,54 @@
 /**
  * Syllable Tapping Game Screen
- * Children tap buttons corresponding to syllables while speaking.
+ * Children tap gradient bubbles corresponding to syllables while speaking.
+ * First bubble tap starts recording, last bubble tap auto-stops.
  */
 
-import { Woodpecker } from '@/components/tapping/Woodpecker';
+import { SyllableBubble } from '@/components/tapping/SyllableBubble';
+import { SpeechBubble } from '@/components/tapping/SpeechBubble';
+import { ConfettiParticles } from '@/components/tapping/ConfettiParticles';
 import { useTappingSession } from '@/hooks/useTappingSession';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import * as Speech from 'expo-speech';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/config/firebaseConfig';
+import LottieView from 'lottie-react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import {
     ActivityIndicator,
-    Animated,
     Dimensions,
     ImageBackground,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
-    ScrollView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 
-// --- WORD DATA (Hardcoded for prototype) ---
+// --- WORD DATA ---
 interface SyllableWord {
     id: string;
     word: string;
     syllables: string[];
-    image?: any; // Placeholder for future images
+    image?: any;
     tier?: number;
-    ttsSyllables?: string[]; // Optional override for TTS
+    ttsSyllables?: string[];
 }
 
 import { oneTapPool } from '@/services/seedOneTap';
 
-// Map the oneTapPool to the format expected by the game
-// Sort by Tier (1 -> 2 -> 3)
 const PRACTICE_WORDS: SyllableWord[] = oneTapPool
     .sort((a, b) => a.tier - b.tier)
     .map(item => ({
         id: item.id,
         word: item.text,
-        syllables: item.syllables.map(s => s.toUpperCase()), // Ensure uppercase for display/consistency
-        tier: item.tier, // Optional: Pass tier if needed for UI later
+        syllables: item.syllables.map(s => s.toUpperCase()),
+        tier: item.tier,
         ttsSyllables: item.ttsSyllables
     }));
 
@@ -66,7 +67,7 @@ export default function TappingGameScreen() {
 
     const [currentWordIndex, setCurrentWordIndex] = useState(0);
     const [loadingProgress, setLoadingProgress] = useState(true);
-    const [woodpeckerState, setWoodpeckerState] = useState<'idle' | 'peck' | 'success' | 'confused'>('idle');
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
 
     // Fetch saved progress on mount
     useEffect(() => {
@@ -93,74 +94,50 @@ export default function TappingGameScreen() {
         fetchProgress();
     }, []);
 
-    // UI Animations
-    const syllableScales = useRef<Animated.Value[]>([]).current;
+    // Show success modal when result arrives with good accuracy
+    useEffect(() => {
+        if (lastResult && lastResult.accuracy > 0.7) {
+            setShowSuccessModal(true);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+    }, [lastResult]);
 
-    // Initialize animations based on current word
+    // Auto-start recording session once bubbles are loaded
+    useEffect(() => {
+        if (!loadingProgress && !isRecording && !isProcessing && !lastResult) {
+            startSession();
+        }
+    }, [loadingProgress, currentWordIndex]);
+
     const currentWord = PRACTICE_WORDS[currentWordIndex];
 
-    useEffect(() => {
-        // Reset scales when word changes
-        while (syllableScales.length) syllableScales.pop();
-        currentWord.syllables.forEach(() => {
-            syllableScales.push(new Animated.Value(1));
-        });
-    }, [currentWordIndex, currentWord]);
-
-    // Update woodpecker state
-    useEffect(() => {
-        if (isProcessing) {
-            setWoodpeckerState('peck');
-        } else if (lastResult) {
-            setWoodpeckerState(lastResult.pecky_state);
-        } else if (isRecording) {
-            setWoodpeckerState(taps.length > 0 ? 'peck' : 'idle');
-        } else {
-            setWoodpeckerState('idle');
-        }
-    }, [isProcessing, lastResult, isRecording, taps.length]);
-
-    // Handle Syllable Tap
+    // Handle Syllable Tap — session is already running, just record taps
+    // Last bubble tap = auto-stop
     const handleSyllableTap = (index: number) => {
-        if (!isRecording) return;
+        if (isProcessing || lastResult || !isRecording) return;
 
-        // 1. Record Logic
         recordTap();
 
-        // 2. Haptic Feedback
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-        // 3. Visual Feedback (Button Pulse)
-        if (syllableScales[index]) {
-            Animated.sequence([
-                Animated.timing(syllableScales[index], { toValue: 0.9, duration: 50, useNativeDriver: true }),
-                Animated.timing(syllableScales[index], { toValue: 1.0, duration: 50, useNativeDriver: true }),
-            ]).start();
+        // If this is the last syllable, auto-stop
+        if (taps.length + 1 >= currentWord.syllables.length) {
+            setTimeout(() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                stopSession(currentWord.word, currentWord.syllables, currentWord.tier || 1);
+            }, 300);
         }
-    };
-
-    const handleStart = () => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        reset();
-        startSession();
-    };
-
-    const handleStop = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        stopSession(currentWord.word, currentWord.syllables, currentWord.tier || 1);
     };
 
     const handleNextWord = async () => {
         reset();
+        setShowSuccessModal(false);
         let nextIndex = 0;
         if (currentWordIndex < PRACTICE_WORDS.length - 1) {
             nextIndex = currentWordIndex + 1;
         } else {
-            nextIndex = 0; // Loop back
+            nextIndex = 0;
         }
 
         setCurrentWordIndex(nextIndex);
-        setWoodpeckerState('idle');
 
         // Save progress
         if (auth.currentUser) {
@@ -174,21 +151,25 @@ export default function TappingGameScreen() {
     };
 
     const handleSpeak = () => {
-        // "Pine. Apple." (Syllables only as requested)
-        // Use ttsSyllables if available (e.g., "Tie, Gur") otherwise default syllables
         const syllablesToSpeak = currentWord.ttsSyllables || currentWord.syllables;
         const textToSpeak = syllablesToSpeak.join('. ');
-
         Speech.speak(textToSpeak, {
             language: 'en-IN',
-            rate: 0.8, // Slightly faster for natural flow
+            rate: 0.8,
             pitch: 1.0,
         });
     };
 
+    const handleRetry = () => {
+        reset();
+        setShowSuccessModal(false);
+        // Restart session after a brief delay to let reset complete
+        setTimeout(() => startSession(), 100);
+    };
+
     return (
         <ImageBackground
-            source={require('@/assets/images/jungle-background.png')}
+            source={require('@/assets/images/underwater-background.jpg')}
             style={styles.container}
             resizeMode="cover"
         >
@@ -211,141 +192,105 @@ export default function TappingGameScreen() {
                             <View style={{ width: 40 }} />
                         </View>
 
-                        {/* Main Content */}
-                        <ScrollView contentContainerStyle={styles.scrollContent}>
+                        {/* Word Card — at the top */}
+                        <View style={styles.wordCard}>
+                            <Text style={styles.fullWordText}>{currentWord.word}</Text>
+                            <TouchableOpacity
+                                onPress={handleSpeak}
+                                style={styles.speakerButton}
+                            >
+                                <MaterialCommunityIcons name="volume-high" size={26} color="#009688" />
+                            </TouchableOpacity>
+                        </View>
 
-                            {/* Character Scene */}
-                            <View style={styles.sceneContainer}>
-                                <Woodpecker state={woodpeckerState} />
-                            </View>
+                        {/* Main Content — Bubbles float freely */}
+                        <View style={styles.mainContent}>
 
-                            {/* Word Display Area */}
-                            <View style={styles.wordCard}>
-                                {!isRecording && !lastResult && !isProcessing && (
-                                    <Text style={styles.promptText}>Tap START and say:</Text>
-                                )}
 
-                                <View style={styles.syllableContainer}>
-                                    {currentWord.syllables.map((syllable, index) => (
-                                        <View key={index} style={styles.syllableWrapper}>
-                                            <TouchableOpacity
-                                                onPress={() => handleSyllableTap(index)}
-                                                activeOpacity={isRecording ? 0.7 : 1}
-                                                disabled={!isRecording}
-                                            >
-                                                <Animated.View
-                                                    style={[
-                                                        styles.syllableButton,
-                                                        // Dynamic Styling
-                                                        isRecording
-                                                            ? styles.syllableActive
-                                                            : lastResult
-                                                                ? (lastResult.syllable_matches?.[index] ? styles.syllableCorrect : styles.syllableIncorrect)
-                                                                : styles.syllableInactive,
+                                {/* Speech Bubble */}
+                                <View style={styles.speechArea}>
+                                    {lastResult ? (
+                                        <SpeechBubble
+                                            message={lastResult.accuracy > 0.7 ? "Perfect rhythm! 🌟" : "Almost! Try again!"}
+                                            type={lastResult.accuracy > 0.7 ? 'success' : 'error'}
+                                        />
+                                    ) : isProcessing ? (
+                                        <SpeechBubble message="Listening... 🎵" />
+                                    ) : isRecording ? (
+                                        <SpeechBubble message="Say each syllable as you tap! 🎤" />
+                                    ) : (
+                                        <SpeechBubble message="Tap each bubble and say it!" />
+                                    )}
 
-                                                        // Highlight tapped syllables if recording
-                                                        isRecording && index < taps.length && styles.syllableTapped,
-                                                        { transform: [{ scale: syllableScales[index] || 1 }] }
-                                                    ]}
-                                                >
-                                                    <Text style={[
-                                                        styles.syllableText,
-                                                        isRecording
-                                                            ? styles.textActive
-                                                            : lastResult
-                                                                ? (lastResult.syllable_matches?.[index] ? styles.textCorrect : styles.textIncorrect)
-                                                                : styles.textInactive
-                                                    ]}>
-                                                        {syllable}
-                                                    </Text>
-                                                </Animated.View>
-                                            </TouchableOpacity>
-                                            <Text style={styles.tapIndicator}>
-                                                {isRecording && index < taps.length ? '✓' : ''}
-                                                {lastResult && (lastResult.syllable_matches?.[index] ? '✅' : '❌')}
-                                            </Text>
-                                        </View>
-                                    ))}
+                                    {/* Confetti on success */}
+                                    {(lastResult?.accuracy ?? 0) > 0.7 && <ConfettiParticles />}
                                 </View>
 
-                                {/* Full Word Label */}
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
-                                    <Text style={styles.fullWordText}>{currentWord.word}</Text>
-                                    <TouchableOpacity
-                                        onPress={handleSpeak}
-                                        style={styles.speakerButton}
-                                    >
-                                        <MaterialCommunityIcons name="volume-high" size={26} color="#009688" />
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-
-                            {/* Feedback Area */}
-                            {lastResult && (
-                                <View style={styles.resultCard}>
-                                    <Text style={styles.resultTitle}>
-                                        {lastResult.accuracy > 0.7 ? '🎉 Great Job!' : '👍 Good Try!'}
-                                    </Text>
-                                    <Text style={styles.feedbackText}>{lastResult.feedback}</Text>
-
-                                    <View style={styles.statsRow}>
-                                        <View style={styles.stat}>
-                                            <Text style={styles.statLabel}>Sync</Text>
-                                            <MaterialCommunityIcons
-                                                name={lastResult.is_sync ? "check-circle" : "alert-circle"}
-                                                size={24}
-                                                color={lastResult.is_sync ? "#4CAF50" : "#FF9800"}
+                                {/* Syllable Bubbles */}
+                                <View style={styles.bubbleArea}>
+                                    <View style={styles.syllableContainer}>
+                                        {currentWord.syllables.map((syllable, index) => (
+                                            <SyllableBubble
+                                                key={`${currentWordIndex}-${index}`}
+                                                syllable={syllable}
+                                                index={index}
+                                                isRecording={isRecording}
+                                                isTapped={isRecording && index < taps.length}
+                                                result={lastResult ? lastResult.syllable_matches?.[index] ?? null : null}
+                                                onTap={handleSyllableTap}
                                             />
-                                        </View>
-                                        <View style={styles.stat}>
-                                            <Text style={styles.statLabel}>Fluency</Text>
-                                            <MaterialCommunityIcons
-                                                name={lastResult.fluent ? "check-circle" : "check"}
-                                                size={24}
-                                                color={lastResult.fluent ? "#4CAF50" : "#999"}
-                                            />
-                                        </View>
+                                        ))}
                                     </View>
 
+                                    {/* Processing indicator */}
+                                    {isProcessing && (
+                                        <View style={styles.loadingContainer}>
+                                            <ActivityIndicator size="large" color="#4CAF50" />
+                                        </View>
+                                    )}
+
+                                    {/* Retry after failure */}
+                                    {lastResult && lastResult.accuracy <= 0.7 && (
+                                        <TouchableOpacity onPress={handleRetry} style={styles.retryButton}>
+                                            <Text style={styles.retryButtonText}>Try Again ↻</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+
+                                {/* Error Display */}
+                                {error && (
+                                    <View style={styles.errorContainer}>
+                                        <Text style={styles.errorText}>{error}</Text>
+                                        <TouchableOpacity onPress={handleRetry}>
+                                            <Text style={{ color: '#48DBFB', marginTop: 5 }}>Try Again</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+
+                        </View>
+
+                        {/* Success Modal Overlay */}
+                        {showSuccessModal && (lastResult?.accuracy ?? 0) > 0.7 && (
+                            <Animated.View
+                                entering={FadeIn.duration(300)}
+                                exiting={FadeOut.duration(200)}
+                                style={styles.successOverlay}
+                            >
+                                <Animated.View entering={FadeIn.duration(400)} style={styles.successCard}>
+                                    <LottieView
+                                        source={require('@/assets/lottie/fish.json')}
+                                        autoPlay
+                                        loop={true}
+                                        style={{ width: 180, height: 180 }}
+                                    />
+                                    <Text style={styles.successTitle}>Great Job! 🌟</Text>
+                                    <Text style={styles.successFeedback}>{lastResult?.feedback}</Text>
                                     <TouchableOpacity style={styles.nextButton} onPress={handleNextWord}>
                                         <Text style={styles.nextButtonText}>Next Word ➜</Text>
                                     </TouchableOpacity>
-                                </View>
-                            )}
-
-                            {/* Error Display */}
-                            {error && (
-                                <View style={styles.errorContainer}>
-                                    <Text style={styles.errorText}>{error}</Text>
-                                    <TouchableOpacity onPress={handleStart}>
-                                        <Text style={{ color: 'blue', marginTop: 5 }}>Try Again</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-
-                        </ScrollView>
-
-                        {/* Bottom Controls */}
-                        <View style={styles.controls}>
-                            {isProcessing ? (
-                                <View style={styles.loadingContainer}>
-                                    <ActivityIndicator size="large" color="#4CAF50" />
-                                    <Text style={styles.statusText}>Pecky is listening...</Text>
-                                </View>
-                            ) : isRecording ? (
-                                <TouchableOpacity onPress={handleStop} style={styles.stopButton}>
-                                    <Text style={styles.stopButtonText}>I'm Done ✅</Text>
-                                </TouchableOpacity>
-                            ) : !lastResult ? (
-                                <TouchableOpacity onPress={handleStart} style={styles.startButton}>
-                                    <Text style={styles.startButtonText}>START</Text>
-                                </TouchableOpacity>
-                            ) : (
-                                <TouchableOpacity onPress={reset} style={styles.retryButton}>
-                                    <Text style={styles.retryButtonText}>Try Again ↻</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
+                                </Animated.View>
+                            </Animated.View>
+                        )}
                     </>
                 )}
             </SafeAreaView>
@@ -359,7 +304,6 @@ const styles = StyleSheet.create({
     },
     safeArea: {
         flex: 1,
-        backgroundColor: 'rgba(255,255,255,0.3)',
     },
     header: {
         flexDirection: 'row',
@@ -385,91 +329,58 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#2E5077',
     },
-    scrollContent: {
+
+    // Main content — fills remaining screen
+    mainContent: {
+        flex: 1,
         alignItems: 'center',
-        paddingBottom: 100,
+        justifyContent: 'center',
+        padding: 12,
     },
-    sceneContainer: {
-        height: 200,
+
+
+    // Speech bubble area
+    speechArea: {
         width: '100%',
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 10,
+        marginBottom: 24,
+        minHeight: 80,
     },
-    wordCard: {
-        width: width * 0.9,
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        borderRadius: 24,
-        padding: 24,
+
+    // Bubble area
+    bubbleArea: {
         alignItems: 'center',
-        elevation: 5,
-        marginBottom: 20,
-    },
-    promptText: {
-        fontSize: 16,
-        color: '#666',
-        marginBottom: 16,
+        justifyContent: 'center',
     },
     syllableContainer: {
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'center',
-        gap: 12,
-        marginBottom: 16,
+        gap: 16,
+        marginBottom: 20,
+        minHeight: 110,
     },
-    syllableWrapper: {
-        alignItems: 'center',
-    },
-    syllableButton: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderBottomWidth: 6,
-        elevation: 6,
-    },
-    syllableActive: {
-        backgroundColor: '#FF9800',
-        borderColor: '#E65100',
-        borderBottomColor: '#E65100',
-    },
-    syllableInactive: {
-        backgroundColor: '#CFD8DC',
-        borderColor: '#B0BEC5',
-        borderBottomColor: '#90A4AE',
-    },
-    syllableTapped: {
-        backgroundColor: '#4CAF50', // Green when tapped
-        borderBottomColor: '#2E7D32',
-    },
-    syllableText: {
-        fontSize: 20,
-        fontWeight: '900',
-    },
-    textActive: { color: '#FFF' },
-    textInactive: { color: '#546E7A' },
-    textCorrect: { color: '#1B5E20' },
-    textIncorrect: { color: '#B71C1C' },
 
-    syllableCorrect: {
-        backgroundColor: '#C8E6C9', // Light Green
-        borderColor: '#4CAF50',
-        borderBottomColor: '#2E7D32',
-    },
-    syllableIncorrect: {
-        backgroundColor: '#FFCDD2', // Light Red
-        borderColor: '#EF5350',
-        borderBottomColor: '#C62828',
-    },
-    tapIndicator: {
-        height: 20,
-        color: '#4CAF50',
-        fontWeight: 'bold',
-        marginTop: 4,
+    // Word card at the top
+    wordCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: 16,
+        marginBottom: 8,
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        backgroundColor: 'rgba(255,255,255,0.85)',
+        borderRadius: 20,
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
     },
     fullWordText: {
-        fontSize: 28,
+        fontSize: 26,
         fontWeight: 'bold',
         color: '#2E5077',
         letterSpacing: 1,
@@ -479,46 +390,51 @@ const styles = StyleSheet.create({
         padding: 10,
         backgroundColor: '#E0F2F1',
         borderRadius: 30,
-        elevation: 2
+        elevation: 2,
     },
 
-    // Result Card
-    resultCard: {
-        width: width * 0.9,
-        backgroundColor: '#E8F5E9',
-        borderRadius: 20,
-        padding: 20,
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#4CAF50',
-        marginBottom: 20,
+    retryButton: {
+        paddingVertical: 12,
+        paddingHorizontal: 28,
+        marginTop: 20,
+        backgroundColor: '#FF9800',
+        borderRadius: 30,
+        elevation: 4,
     },
-    resultTitle: {
+    retryButtonText: { color: '#FFF', fontSize: 17, fontWeight: 'bold' },
+
+    loadingContainer: { alignItems: 'center', marginTop: 16 },
+
+    errorContainer: { padding: 20, alignItems: 'center' },
+    errorText: { color: 'red', textAlign: 'center' },
+
+    // Success Modal
+    successOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 100,
+    },
+    successCard: {
+        backgroundColor: '#FFF',
+        borderRadius: 24,
+        padding: 24,
+        alignItems: 'center',
+        width: '85%',
+        elevation: 10,
+    },
+    successTitle: {
         fontSize: 24,
         fontWeight: 'bold',
         color: '#2E7D32',
-        marginBottom: 8,
+        marginTop: 8,
     },
-    feedbackText: {
+    successFeedback: {
         fontSize: 16,
+        color: '#555',
         textAlign: 'center',
-        color: '#333',
-        marginBottom: 16,
-    },
-    statsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        width: '100%',
-        marginBottom: 20,
-    },
-    stat: {
-        alignItems: 'center',
-        gap: 4,
-    },
-    statLabel: {
-        fontSize: 12,
-        color: '#666',
-        fontWeight: '600',
+        marginVertical: 12,
     },
     nextButton: {
         backgroundColor: '#2196F3',
@@ -532,45 +448,4 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
     },
-
-    // Bottom Controls
-    controls: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: 20,
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.8)',
-    },
-    startButton: {
-        backgroundColor: '#4CAF50',
-        width: 200,
-        paddingVertical: 16,
-        borderRadius: 35,
-        alignItems: 'center',
-        elevation: 8,
-        borderBottomWidth: 6,
-        borderBottomColor: '#2E7D32',
-    },
-    startButtonText: { color: '#fff', fontSize: 24, fontWeight: 'bold', letterSpacing: 1 },
-
-    stopButton: {
-        backgroundColor: '#F44336',
-        paddingVertical: 14,
-        paddingHorizontal: 40,
-        borderRadius: 30,
-    },
-    stopButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-
-    retryButton: {
-        padding: 12,
-    },
-    retryButtonText: { color: '#555', fontSize: 16, fontWeight: '600' },
-
-    loadingContainer: { alignItems: 'center' },
-    statusText: { marginTop: 8, color: '#4CAF50', fontWeight: '600' },
-
-    errorContainer: { padding: 20, alignItems: 'center' },
-    errorText: { color: 'red', textAlign: 'center' },
 });

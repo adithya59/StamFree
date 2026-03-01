@@ -39,7 +39,7 @@ export const GAMES: GameConfig[] = [
     title: 'Rhythm Tap',
     description: 'Tap out syllables & find your rhythm',
     iconName: 'music-note',
-    lottieSource: require('@/assets/lottie/tapping.json'),
+    lottieSource: require('@/assets/lottie/bubble.json'),
     gradientColors: ['#ec4899', '#be185d'], // Pink-500 -> Pink-700
     darkGradientColors: ['#9d174d', '#831843'], // Pink-800 -> Pink-900
     route: '/exercises/tapping-game',
