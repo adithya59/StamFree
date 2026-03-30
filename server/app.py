@@ -386,26 +386,80 @@ def analyze_audio():
     file.save(filepath)
 
     try:
-        # 1. RUN WAVLM PREDICTION (with all scores for multi-type detection)
-        label, confidence, all_scores = predict_file(filepath, return_all_scores=True)
+        # Load audio once for multiple analysis windows
+        y, sr = librosa.load(filepath, sr=16000)
+        total_duration = len(y) / sr
+        
+        window_size = 3.0  # seconds
+        hop_size = 1.5    # seconds (50% overlap for better coverage)
+        
+        aggregated_scores = {}
+        
+        # Define windows
+        if total_duration <= window_size:
+            start_times = [0]
+        else:
+            # hop_size based sliding windows
+            start_times = np.arange(0, max(0.1, total_duration - window_size + 0.1), hop_size)
+            
+        # Process each window
+        for start in start_times:
+            start_sample = int(start * sr)
+            end_sample = min(len(y), int((start + window_size) * sr))
+            segment = y[start_sample:end_sample]
+            
+            # Skip very short segments
+            if len(segment) < 16000 * 0.5:
+                continue
+                
+            _, _, scores = predict_file(segment, return_all_scores=True)
+            for label, score in scores.items():
+                if label not in aggregated_scores:
+                    aggregated_scores[label] = 0.0
+                # Take the maximum confidence across all windows for each disfluency type
+                aggregated_scores[label] = max(aggregated_scores[label], score)
+        
+        if not aggregated_scores:
+             return jsonify({"error": "Audio too short or silent"}), 400
 
-        # Logic: If label contains "fluent", it's fluent. Else it's a stutter.
-        is_stutter = "fluent" not in label.lower()
-        stutter_type = "Fluent"
-
+        # Determine primary result
+        fluent_score = aggregated_scores.get("fluent", 0.0)
+        
+        # Filter out fluent for finding stutters
+        non_fluent_scores = {l: s for l, s in aggregated_scores.items() if l != "fluent"}
+        if non_fluent_scores:
+            max_non_fluent_label = max(non_fluent_scores, key=non_fluent_scores.get)
+            max_non_fluent_score = non_fluent_scores.get(max_non_fluent_label, 0.0)
+        else:
+            max_non_fluent_label = "fluent"
+            max_non_fluent_score = 0.0
+        
+        # Logic to decide if it's overall a stutter
+        is_stutter = max_non_fluent_score > 0.4 or fluent_score < 0.6
+        
+        detected_types_list = []
         if is_stutter:
-            if "_" in label:
-                stutter_type = label.split("_")[1].capitalize()
-            else:
-                stutter_type = label.capitalize()
+            # Collect all types above a reasonable threshold
+            STUTTER_THRESHOLD = 0.25
+            for label, score in sorted(non_fluent_scores.items(), key=lambda x: x[1], reverse=True):
+                if score >= STUTTER_THRESHOLD:
+                    detected_types_list.append(label.capitalize())
+            
+            # If nothing hit high threshold but we marked as stutter, take max anyway
+            if not detected_types_list:
+                detected_types_list.append(max_non_fluent_label.capitalize())
+        else:
+            detected_types_list = ["Fluent"]
 
         # 2. GET TRANSCRIPT (for phonemes)
         full_text, words = get_google_transcript(filepath)
         final_phoneme = None
+        culprit_word = None
 
         if is_stutter and words:
-            # Find the word with lowest confidence (often the stuttered one)
+            # Find the word with lowest confidence
             culprit = min(words, key=lambda w: w["confidence"])
+            culprit_word = culprit["word"]
 
             phonemes = g2p(culprit["word"])
             clean = [p for p in phonemes if p not in [" ", "'"]]
@@ -415,11 +469,12 @@ def analyze_audio():
 
         response = {
             "is_stutter": is_stutter,
-            "stutter_score": confidence,
-            "type": stutter_type,
-            "all_scores": all_scores,  # NEW: All class probabilities for multi-type detection
+            "stutter_score": max_non_fluent_score if is_stutter else fluent_score,
+            "type": ", ".join(detected_types_list) if is_stutter else "Fluent",
+            "detected_types": detected_types_list,
+            "all_scores": aggregated_scores,
             "problem_phoneme": final_phoneme,
-            "problem_word": culprit["word"] if is_stutter and words else None,
+            "problem_word": culprit_word,
             "transcript": full_text,
         }
         return jsonify(response)

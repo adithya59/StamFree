@@ -8,7 +8,10 @@ import {
   Text,
   View,
   TouchableOpacity,
+  Dimensions,
+  Modal,
 } from 'react-native';
+import { LineChart } from 'react-native-chart-kit';
 import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
 import { H1, H2, Label, P } from '@/components/ui/Typography';
 
@@ -69,6 +72,14 @@ export default function ProgressScreen() {
   const [wordProgress, setWordProgress] = useState<Record<string, WordProgress>>({});
   const [selectedTier, setSelectedTier] = useState<number>(1);
   const [showTierDropdown, setShowTierDropdown] = useState(false);
+  const [weeklyProgress, setWeeklyProgress] = useState<{labels: string[], data: number[]}>({ labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], data: [0, 0, 0, 0, 0, 0, 0] });
+  const [infoModal, setInfoModal] = useState<{visible: boolean, title: string, content: string}>({visible: false, title: '', content: ''});
+
+  const showInfo = (title: string, content: string) => {
+    setInfoModal({ visible: true, title, content });
+  };
+  
+  const screenWidth = Dimensions.get('window').width;
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -93,51 +104,112 @@ export default function ProgressScreen() {
     // 2. Listen to Playlist Changes
     const playlistRef = doc(db, `users/${user.uid}/snake_progress/playlist`);
 
-    // 3. Listen to Rhythm Tap Sessions
+    // 3. Listen to All Sessions for Global Progress
     const sessionsRef = collection(db, `users/${user.uid}/practice_sessions`);
-    const q = query(sessionsRef, where('gameId', '==', 'onetap'));
-    const unsubscribeSessions = onSnapshot(q, (snap) => {
+    const unsubscribeSessions = onSnapshot(sessionsRef, (snap) => {
+      // rhythm stats variables
       let totalWords = 0;
       let totalAccuracySum = 0;
       let bestAccuracy = 0;
       let syncCount = 0;
       const progress: Record<string, WordProgress> = {};
 
+      // turtle stats variables
+      const stats = {
+        jungle: { attempts: 0, successes: 0 },
+        river: { attempts: 0, successes: 0 },
+        mountain: { attempts: 0, successes: 0 }
+      };
+      const latestWordWpm: Record<string, number> = {};
+
+      // historical tracking variables
+      const dailyScores: Record<string, { total: number, count: number }> = {};
+      const today = new Date();
+      // Initialize last 7 days
+      const daysStr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const weekLabels: string[] = [];
+      const weekDates: string[] = [];
+      
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        dailyScores[dateStr] = { total: 0, count: 0 };
+        weekLabels.push(daysStr[d.getDay()]);
+        weekDates.push(dateStr);
+      }
+
       snap.forEach(doc => {
         const data = doc.data();
-        totalWords++;
-        totalAccuracySum += data.accuracy || 0;
-        if (data.accuracy > bestAccuracy) bestAccuracy = data.accuracy;
-        if (data.isSync) syncCount++;
-
-        const word = data.word;
-        if (!progress[word]) {
-          progress[word] = {
-            word: word,
-            tier: data.tier || 1,
-            attempts: 0,
-            syllables: data.syllables || 0,
-            syllableMistakes: new Array(data.syllables || 0).fill(0),
-            lastSession: { accuracy: 0, syllableMatches: [] }
-          };
+        
+        // historical data processing
+        if (data.timestamp) {
+           const dateObj = data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp);
+           const dateStr = dateObj.toISOString().split('T')[0];
+           
+           if (dailyScores[dateStr]) { // Only if within last 7 days
+              let score = 0;
+              if (data.gameId === 'onetap') score = data.accuracy || 0;
+              if (data.gameId === 'turtle') score = data.isSuccess ? 100 : 0;
+              
+              dailyScores[dateStr].total += score;
+              dailyScores[dateStr].count++;
+           }
         }
 
-        progress[word].attempts++;
+        if (data.gameId === 'onetap') {
+          totalWords++;
+          totalAccuracySum += data.accuracy || 0;
+          if (data.accuracy > bestAccuracy) bestAccuracy = data.accuracy;
+          if (data.isSync) syncCount++;
 
-        // Update Syllable Mistakes
-        if (data.syllable_matches) {
-          data.syllable_matches.forEach((matched: boolean, index: number) => {
-            if (!matched && progress[word].syllableMistakes[index] !== undefined) {
-              progress[word].syllableMistakes[index]++;
+          const word = data.word;
+          if (word) {
+            if (!progress[word]) {
+              progress[word] = {
+                word: word,
+                tier: data.tier || 1,
+                attempts: 0,
+                syllables: data.syllables || 0,
+                syllableMistakes: new Array(data.syllables || 0).fill(0),
+                lastSession: { accuracy: 0, syllableMatches: [] }
+              };
             }
-          });
-          progress[word].lastSession = {
-            accuracy: data.accuracy,
-            syllableMatches: data.syllable_matches
-          };
+
+            progress[word].attempts++;
+
+            if (data.syllable_matches) {
+              data.syllable_matches.forEach((matched: boolean, index: number) => {
+                if (!matched && progress[word].syllableMistakes[index] !== undefined) {
+                  progress[word].syllableMistakes[index]++;
+                }
+              });
+              progress[word].lastSession = {
+                accuracy: data.accuracy,
+                syllableMatches: data.syllable_matches
+              };
+            }
+          }
+        } else if (data.gameId === 'turtle') {
+          const tier = data.tier || 1;
+          if (tier === 1) {
+            stats.jungle.attempts++;
+            if (data.isSuccess) stats.jungle.successes++;
+          } else if (tier === 2) {
+            stats.river.attempts++;
+            if (data.isSuccess) stats.river.successes++;
+          } else if (tier === 3) {
+            stats.mountain.attempts++;
+            if (data.isSuccess) stats.mountain.successes++;
+          }
+
+          if (data.word && data.wpm) {
+            latestWordWpm[data.word] = data.wpm;
+          }
         }
       });
 
+      // finalize rhythm
       setRhythmStats({
         totalWords,
         bestAccuracy: Math.round(bestAccuracy * 100),
@@ -145,57 +217,20 @@ export default function ProgressScreen() {
         syncRate: totalWords > 0 ? Math.round((syncCount / totalWords) * 100) : 0
       });
       setWordProgress(progress);
-    });
 
-    // 4. Listen to Turtle Talk Sessions
-    const turtleQuery = query(sessionsRef, where('gameId', '==', 'turtle'));
-    const unsubscribeTurtle = onSnapshot(turtleQuery, (snap) => {
-      const stats = {
-        jungle: { attempts: 0, successes: 0 },
-        river: { attempts: 0, successes: 0 },
-        mountain: { attempts: 0, successes: 0 }
-      };
-
-      // Track latest WPM per word to identify speed issues
-      const latestWordWpm: Record<string, number> = {};
-
-      snap.forEach(doc => {
-        const data = doc.data();
-        const tier = data.tier || 1;
-
-        // Aggregate Stats by World
-        if (tier === 1) {
-          stats.jungle.attempts++;
-          if (data.isSuccess) stats.jungle.successes++;
-        } else if (tier === 2) {
-          stats.river.attempts++;
-          if (data.isSuccess) stats.river.successes++;
-        } else if (tier === 3) {
-          stats.mountain.attempts++;
-          if (data.isSuccess) stats.mountain.successes++;
-        }
-
-        // Track Speed (Store WPM of latest attempt for each word)
-        // Assuming docs come in some order, but better to compare timestamps if available
-        // For simplicity in this snapshot, we'll just overwrite, as we want to know if *recent* performance is fast.
-        // Ideally we'd sort by timestamp, but snap order isn't guaranteed without sort.
-        // Let's assume the query or implicit order gives us a mix. 
-        // We really want to know if ANY recent attempt was too fast? 
-        // Or just the LAST one? Let's go with: if the *last logged* session for a word was too fast.
-        // We'll use the doc's timestamp if needed, but data object has it.
-        // Note: We aren't sorting the query, so order might be insertion order (mostly).
-        if (data.word && data.wpm) {
-          latestWordWpm[data.word] = data.wpm;
-        }
-      });
-
+      // finalize turtle
       setTurtleStats(stats);
-
-      // Filter for speed warnings (> 130 WPM)
       const warnings = Object.entries(latestWordWpm)
         .filter(([_, wpm]) => wpm > 130)
         .map(([word]) => word);
       setSpeedWarnings(warnings);
+
+      // finalize historical
+      const weekData = weekDates.map(dateStr => {
+         const ds = dailyScores[dateStr];
+         return ds.count > 0 ? Math.round(ds.total / ds.count) : 0;
+      });
+      setWeeklyProgress({ labels: weekLabels, data: weekData });
     });
 
     const unsubscribePlaylist = onSnapshot(playlistRef, (snap) => {
@@ -211,7 +246,6 @@ export default function ProgressScreen() {
     return () => {
       unsubscribePlaylist();
       unsubscribeSessions();
-      unsubscribeTurtle();
     };
   }, []);
 
@@ -266,7 +300,63 @@ export default function ProgressScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
         <View className="px-6 pt-4 mb-6">
           <H1 className="text-brand-primary mb-2">Your Journey</H1>
-          <P className="text-slate-600 dark:text-slate-400">Track your mastered sounds and current goals.</P>
+          <P className="text-slate-600 dark:text-slate-400">Track your overall progress and detailed stats.</P>
+        </View>
+
+        {/* Skill Growth Chart */}
+        <View className="mx-4 bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm mb-6">
+          <View className="flex-row items-center gap-4 mb-4">
+            <View className="w-12 h-12 rounded-full bg-brand-primary/10 items-center justify-center">
+              <MaterialCommunityIcons name="trending-up" size={24} color="#0D9488" />
+            </View>
+            <View className="flex-1">
+              <View className="flex-row items-center gap-2">
+                <H2 className="text-slate-800 dark:text-white">Overall Growth</H2>
+                <TouchableOpacity onPress={() => showInfo('Overall Growth', 'This graph tracks your average score across all exercises over the last 7 days.\n\nPlay games daily to increase your average!')}>
+                  <MaterialCommunityIcons name="information-outline" size={20} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
+              <P className="text-xs text-slate-500 dark:text-slate-400">Your average score over the last 7 days.</P>
+            </View>
+          </View>
+          <View className="items-center">
+            <LineChart
+              data={{
+                labels: weeklyProgress.labels,
+                datasets: [
+                  {
+                    data: weeklyProgress.data.every(d => d === 0) ? [0, 0, 0, 0, 0, 0, 0] : weeklyProgress.data,
+                    color: (opacity = 1) => `rgba(13, 148, 136, ${opacity})`,
+                    strokeWidth: 3
+                  }
+                ]
+              }}
+              width={screenWidth - 72}
+              height={220}
+              chartConfig={{
+                backgroundColor: '#ffffff',
+                backgroundGradientFrom: '#ffffff',
+                backgroundGradientTo: '#ffffff',
+                decimalPlaces: 0,
+                color: (opacity = 1) => `rgba(13, 148, 136, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+                style: {
+                  borderRadius: 16
+                },
+                propsForDots: {
+                  r: '5',
+                  strokeWidth: '2',
+                  stroke: '#0f766e'
+                }
+              }}
+              yAxisSuffix="%"
+              bezier
+              style={{
+                marginVertical: 8,
+                borderRadius: 16
+              }}
+            />
+          </View>
         </View>
 
         {/* Rhythm Adventure Section */}
@@ -276,7 +366,12 @@ export default function ProgressScreen() {
               <MaterialCommunityIcons name="music-note" size={28} color="#fff" />
             </View>
             <View className="flex-1">
-              <H2 className="text-slate-800 dark:text-white">Rhythm Adventure</H2>
+              <View className="flex-row items-center gap-2">
+                <H2 className="text-slate-800 dark:text-white">Rhythm Adventure</H2>
+                <TouchableOpacity onPress={() => showInfo('Rhythm Adventure', 'This tracks your syllable tapping accuracy.\n\n• Words: Total words practiced.\n• Best: Your highest accuracy.\n• Avg: Average overall accuracy.\n• Sync: How well you tapped in sync with the beat.')}>
+                  <MaterialCommunityIcons name="information-outline" size={20} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
               <P className="text-xs text-slate-500 dark:text-slate-400">Tap to the beat and improve your flow!</P>
             </View>
           </View>
@@ -379,7 +474,12 @@ export default function ProgressScreen() {
               <MaterialCommunityIcons name="tortoise" size={28} color="#fff" />
             </View>
             <View className="flex-1">
-              <H2 className="text-slate-800 dark:text-white">Turtle Talk</H2>
+              <View className="flex-row items-center gap-2">
+                <H2 className="text-slate-800 dark:text-white">Turtle Talk</H2>
+                <TouchableOpacity onPress={() => showInfo('Turtle Talk', 'This exercise helps you speak slowly and smoothly.\n\nCompleting a word successfully adds to your Tier attempts. The percentage shows your success rate for slow, fluent speech.')}>
+                  <MaterialCommunityIcons name="information-outline" size={20} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
               <P className="text-xs text-slate-500 dark:text-slate-400">Slow and steady wins the race!</P>
             </View>
           </View>
@@ -451,7 +551,12 @@ export default function ProgressScreen() {
               <MaterialCommunityIcons name="snake" size={28} color="#fff" />
             </View>
             <View className="flex-1">
-              <H2 className="text-slate-800 dark:text-white">Snake</H2>
+              <View className="flex-row items-center gap-2">
+                <H2 className="text-slate-800 dark:text-white">Snake</H2>
+                <TouchableOpacity onPress={() => showInfo('Snake Game', 'This exercise focuses on prolonging sounds.\n\n• Active: Sounds you are currently practicing.\n• Mastered: Sounds you have successfully prolonged without stuttering.\n\nThe percentage shows your success rate for each active sound.')}>
+                  <MaterialCommunityIcons name="information-outline" size={20} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
               <P className="text-xs text-slate-500 dark:text-slate-400">Master your sounds by holding them long and smooth.</P>
             </View>
           </View>
@@ -493,6 +598,44 @@ export default function ProgressScreen() {
         </View>
 
       </ScrollView>
+
+      {/* Info Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={infoModal.visible}
+        onRequestClose={() => setInfoModal(prev => ({ ...prev, visible: false }))}
+      >
+        <View className="flex-1 justify-center items-center bg-slate-900/60 px-6">
+          <View className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-sm shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
+            <View className="flex-row items-center justify-between p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
+              <View className="flex-row items-center gap-3">
+                <View className="w-8 h-8 rounded-full bg-brand-primary/10 items-center justify-center">
+                  <MaterialCommunityIcons name="lightbulb-on" size={18} color="#0D9488" />
+                </View>
+                <H2 className="text-brand-primary text-xl">{infoModal.title}</H2>
+              </View>
+              <TouchableOpacity 
+                onPress={() => setInfoModal(prev => ({ ...prev, visible: false }))}
+                className="bg-slate-100 dark:bg-slate-700 p-2 rounded-full active:scale-95"
+              >
+                <MaterialCommunityIcons name="close" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            <View className="p-6">
+              <P className="text-slate-600 dark:text-slate-300 leading-relaxed text-base">
+                {infoModal.content}
+              </P>
+              <TouchableOpacity
+                className="mt-8 bg-brand-primary py-3.5 rounded-2xl items-center shadow-lg shadow-brand-primary/30 active:scale-95"
+                onPress={() => setInfoModal(prev => ({ ...prev, visible: false }))}
+              >
+                <Text className="text-white font-bold text-lg">Got it!</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenWrapper>
   );
 }

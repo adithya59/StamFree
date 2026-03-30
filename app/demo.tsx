@@ -16,11 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 
-const STORY_TEXT = "The Quick Adventure\n\nThe quick brown fox jumps over a lazy dog near the quiet zoo. Zoe and Jack bring five bright yellow balloons and a blue backpack. “This thin path is very rocky,” Jack says. They walk through thick grass and splash in the fresh water. Suddenly, strong winds blow, and the branches shake. Zoe shouts, “Wait for me!” and waves her hand. After the exciting journey, they relax and enjoy warm vanilla juice.";
-
-
-
-
+const STORIES = [
+  "The Quick Adventure\n\nThe quick brown fox jumps over a lazy dog near the quiet zoo. Zoe and Jack bring five bright yellow balloons and a blue backpack. “This thin path is very rocky,” Jack says. They walk through thick grass and splash in the fresh water. Suddenly, strong winds blow, and the branches shake. Zoe shouts, “Wait for me!” and waves her hand. After the exciting journey, they relax and enjoy warm vanilla juice.",
+  "A Day at the Park\n\nThe sun shone brightly as children played on the swings. Max chased a yellow butterfly across the green meadow. “Look how high I can go!” yelled Sam from the slide. A gentle breeze rustled the leaves of the oak trees. They sat on a blanket, eating sweet red apples and listening to the birds sing their cheerful songs.",
+  "Space Exploration\n\nAstronauts floated gracefully in the dark void of space. The blue gem of Earth hung beautifully against the starlit backdrop. “Commencing docking procedure,” reported the captain smoothly. They carefully aligned the shuttle with the massive station. Inside, scientists prepared their complex experiments to study the effects of zero gravity on delicate plant growth.",
+  "Deep Sea Mystery\n\nSubmarines dive deep into the cold, dark ocean trenches. Bioluminescent creatures glow in the pitch black water like neon signposts. “Sonar detects a large object ahead,” whispered the navigator. They moved slowly, uncovering an ancient, barnacle-covered shipwreck. Countless colourful fish darted through the broken timbers, exploring secrets lost to time.",
+  "The Magic Library\n\nDust motes danced in the shafts of golden sunlight reading the old books. A soft hum resonated from the shelf of spellbooks. “This one looks interesting,” muttered the curious wizard, opening a leather-bound tome. Purple sparks suddenly flew from the yellowed pages. He smiled as the ancient runes began to glow with a strange, magical energy."
+];
 
 export default function Demo() {
   const router = useRouter();
@@ -33,6 +35,11 @@ export default function Demo() {
   const [backendStatus, setBackendStatus] = useState<'unknown' | 'ok' | 'down'>('unknown');
   const [analysisFailed, setAnalysisFailed] = useState(false);
   const [thinkingMessage, setThinkingMessage] = useState<string | undefined>(undefined);
+  const [storyIndex, setStoryIndex] = useState(0);
+
+  const nextStory = () => {
+    setStoryIndex((prev) => (prev + 1) % STORIES.length);
+  };
 
 
 
@@ -155,41 +162,26 @@ export default function Demo() {
 
       const data = await response.json();
       console.log('Server Response:', data);
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
       setResult(data);
       setThinkingMessage(undefined);
 
       // 🔥 PERSONALIZATION LOGIC - Support multiple stutter types
-      if (data.is_stutter && data.all_scores) {
-        // Detect all types above 25% threshold
-        const THRESHOLD = 0.25;
-        const detectedTypes: string[] = [];
+      if (data.is_stutter) {
+        let detectedTypes: string[] = data.detected_types || [];
         
-        for (const [type, score] of Object.entries(data.all_scores)) {
-          if ((score as number) >= THRESHOLD) {
-            let normalizedType = type.toLowerCase();
-            if (normalizedType === 'block') normalizedType = 'blocking';
-            detectedTypes.push(normalizedType);
-          }
-        }
-        
-        // If no types above threshold, use the primary detected type
+        // If no explicit list, fallback to primary type
         if (detectedTypes.length === 0 && data.type) {
-          let primaryType = data.type.toLowerCase();
-          if (primaryType === 'block') primaryType = 'blocking';
-          detectedTypes.push(primaryType);
+            detectedTypes = data.type.split(',').map((t: string) => t.trim());
         }
+
+        // Ensure normalization for background logic (e.g. 'block' -> 'blocking')
+        const normalizedTypes = detectedTypes.map((t: string) => {
+          let nt = t.toLowerCase();
+          if (nt === 'block') return 'blocking';
+          return nt;
+        });
         
-        await AsyncStorage.setItem('stutterTypes', JSON.stringify(detectedTypes));
-      } else if (data.is_stutter && data.type) {
-        // Fallback: single type detected (no all_scores)
-        let detectedType = data.type.toLowerCase();
-        if (detectedType === 'block') detectedType = 'blocking';
-        await AsyncStorage.setItem('stutterTypes', JSON.stringify([detectedType]));
+        await AsyncStorage.setItem('stutterTypes', JSON.stringify(normalizedTypes));
       } else {
         // No stutter detected - mark onboarding as complete with "fluent" type
         await AsyncStorage.setItem('stutterTypes', JSON.stringify(['fluent']));
@@ -236,12 +228,18 @@ export default function Demo() {
 
         {/* STORY PROMPT SECTION */}
         <View className="w-full px-6 mb-8">
-          <View className="bg-brand-primary/5 dark:bg-brand-primary/10 rounded-3xl p-6 border border-brand-primary/10">
-            <Text className="text-brand-primary font-bold tracking-widest uppercase text-xs mb-4">Reading Adventure</Text>
+          <View className="bg-brand-primary/5 dark:bg-brand-primary/10 rounded-3xl p-6 border border-brand-primary/10 relative">
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className="text-brand-primary font-bold tracking-widest uppercase text-xs">Reading Adventure</Text>
+              <TouchableOpacity onPress={nextStory} className="bg-brand-primary/10 px-3 py-1 rounded-full flex-row items-center">
+                <Ionicons name="refresh" size={14} color="#0D9488" className="mr-1" />
+                <Text className="text-brand-primary font-bold text-xs ml-1">Change</Text>
+              </TouchableOpacity>
+            </View>
 
             <ScrollView className="max-h-60" showsVerticalScrollIndicator={false}>
               <Text className="text-xl font-bold leading-relaxed text-slate-800 dark:text-slate-100 text-center">
-                {STORY_TEXT}
+                {STORIES[storyIndex]}
               </Text>
             </ScrollView>
 
@@ -295,9 +293,20 @@ export default function Demo() {
 
             {/* 1. MAIN RESULT */}
             <Label className="text-center mb-2 uppercase tracking-widest text-slate-400">Analysis Result</Label>
-            <H2 className={`text-center mb-6 ${result.is_stutter ? 'text-red-500' : 'text-green-500'}`}>
+            <H2 className={`text-center mb-4 ${result.is_stutter ? 'text-red-500' : 'text-green-500'}`}>
               {result.is_stutter ? `⚠️ ${result.type} detected` : '✅ Fluent speech'}
             </H2>
+
+            {/* Multiple Types Chips */}
+            {result.is_stutter && result.detected_types && result.detected_types.length > 1 && (
+              <View className="flex-row flex-wrap justify-center mb-6 gap-2">
+                {result.detected_types.map((t: string) => (
+                  <View key={t} className="bg-red-50 dark:bg-red-900/30 px-3 py-1 rounded-full border border-red-200 dark:border-red-800">
+                    <Text className="text-red-600 dark:text-red-400 font-bold text-[10px] uppercase tracking-tighter">{t}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {/* 2. TRANSCRIPT */}
             <View className="h-[1px] bg-slate-100 dark:bg-slate-700 my-4 w-full" />
@@ -339,20 +348,23 @@ export default function Demo() {
                 {result.all_scores && (
                   <View className="mt-6 space-y-4">
                     <Label className="mb-2 text-slate-400 text-xs uppercase tracking-widest">Issue Breakdown</Label>
-                    {Object.entries(result.all_scores).map(([type, score]: [string, any]) => (
-                      <View key={type} className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl mb-2">
-                        <View className="flex-row justify-between items-center mb-1">
-                          <Text className="text-slate-700 dark:text-slate-300 font-bold capitalize">{type}</Text>
-                          <Text className="text-slate-500 text-xs">{(score * 100).toFixed(0)}%</Text>
+                    {Object.entries(result.all_scores).map(([type, score]: [string, any]) => {
+                      const isDetected = result.detected_types?.some((dt: string) => dt.toLowerCase() === type.toLowerCase());
+                      return (
+                        <View key={type} className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl mb-2">
+                          <View className="flex-row justify-between items-center mb-1">
+                            <Text className="text-slate-700 dark:text-slate-300 font-bold capitalize">{type}</Text>
+                            <Text className="text-slate-500 text-xs">{(score * 100).toFixed(0)}%</Text>
+                          </View>
+                          <View className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <View
+                              className={`h-full ${isDetected ? 'bg-red-500' : 'bg-brand-primary/40'}`}
+                              style={{ width: `${score * 100}%` }}
+                            />
+                          </View>
                         </View>
-                        <View className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <View
-                            className={`h-full ${type === result.type ? 'bg-red-500' : 'bg-brand-primary/40'}`}
-                            style={{ width: `${score * 100}%` }}
-                          />
-                        </View>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 )}
 
@@ -370,13 +382,14 @@ export default function Demo() {
                   <TouchableOpacity
                     className="mt-6 bg-brand-primary py-4 rounded-2xl items-center shadow-lg shadow-brand-primary/30"
                     onPress={() => {
-                      router.replace('/(tabs)');
+                        // Redirect to Home page which will filter exercises
+                        router.replace('/(tabs)');
                     }}
                   >
                     <Text className="text-white font-extrabold text-lg">
-                      Start My {result.type} Journey
+                      Start My {result.detected_types?.[0] || 'Journey'}
                     </Text>
-                    <Text className="text-white/70 text-xs font-medium uppercase tracking-tighter">See exercises for {result.type}</Text>
+                    <Text className="text-white/70 text-xs font-medium uppercase tracking-tighter">See your personalized plan</Text>
                   </TouchableOpacity>
                 )}
               </View>
