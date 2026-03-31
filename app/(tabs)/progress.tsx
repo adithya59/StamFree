@@ -148,12 +148,24 @@ export default function ProgressScreen() {
            const dateStr = dateObj.toISOString().split('T')[0];
            
            if (dailyScores[dateStr]) { // Only if within last 7 days
-              let score = 0;
-              if (data.gameId === 'onetap') score = data.accuracy || 0;
-              if (data.gameId === 'turtle') score = data.isSuccess ? 100 : 0;
-              
-              dailyScores[dateStr].total += score;
-              dailyScores[dateStr].count++;
+              // Only count sessions that have a defined score for the graph
+              if (data.gameId === 'onetap') {
+                // BUG FIX: data.accuracy is already 0-100, do not multiply by 100 again
+                const score = data.accuracy || 0; 
+                dailyScores[dateStr].total += score;
+                dailyScores[dateStr].count++;
+              } else if (data.gameId === 'turtle') {
+                const score = data.isSuccess ? 100 : 0;
+                dailyScores[dateStr].total += score;
+                dailyScores[dateStr].count++;
+              } else if (data.gameId === 'snake') {
+                // Snake 'stars' map from 1-3 to a 33%-100% accuracy scale
+                const stars = data.stars || 1;
+                const score = Math.round((stars / 3) * 100); 
+                dailyScores[dateStr].total += score;
+                dailyScores[dateStr].count++;
+              }
+              // Other games are excluded from the global graph for now
            }
         }
 

@@ -1,5 +1,5 @@
 import { db } from '@/config/firebaseConfig';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, addDoc, getDocs, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 
 // --- Types ---
 
@@ -112,7 +112,8 @@ export async function getNextSnakeSession(userId: string) {
 export async function recordSnakeSessionResult(
   userId: string, 
   phonemeId: string, 
-  isSuccess: boolean
+  isSuccess: boolean,
+  stars: number = 1,
 ): Promise<{ leveledUp: boolean, nextPhoneme?: string }> {
   const playlistRef = doc(db, `users/${userId}/snake_progress/playlist`);
   const snap = await getDoc(playlistRef);
@@ -164,13 +165,27 @@ export async function recordSnakeSessionResult(
     }
   }
 
-  // Save changes
+  // Save changes to playlist
   await updateDoc(playlistRef, {
     activePhonemes: playlist.activePhonemes,
     masteredPhonemes: playlist.masteredPhonemes,
     lockedPhonemes: playlist.lockedPhonemes,
     [`phonemeStats.${phonemeId}`]: stats
   });
+
+  // Write to practice_sessions so progress screen graph can read it
+  try {
+    const sessionsRef = collection(db, `users/${userId}/practice_sessions`);
+    await addDoc(sessionsRef, {
+      gameId: 'snake',
+      phoneme: phonemeId,
+      isSuccess,
+      stars,
+      timestamp: serverTimestamp(),
+    });
+  } catch (e) {
+    console.error('[snakePlaylist] Failed to write practice_session:', e);
+  }
 
   return { leveledUp, nextPhoneme };
 }

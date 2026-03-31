@@ -140,7 +140,8 @@ export function useSnakeSession(
           const { leveledUp, nextPhoneme } = await recordSnakeSessionResult(
             auth.currentUser!.uid,
             sessionConfig.targetId,
-            finalStars === 3  // Only "master" on 3 stars
+            finalStars === 3,  // Only "master" on 3 stars
+            finalStars,        // Pass actual stars for practice_session log
           );
 
           // C. Update Global Stats (Streak, Weekly Sessions, XP)
