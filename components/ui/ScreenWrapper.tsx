@@ -52,9 +52,9 @@ export const ScreenWrapper = ({
   }
 
   return (
-    <Container className={`flex-1 ${bgClass} ${className}`} {...props}>
+    <Container className={`${bgClass} ${className}`} style={[{ flex: 1 }, props.style]} {...props}>
       <StatusBar style="auto" /> 
-      <View className="flex-1 px-4"> 
+      <View style={{ flex: 1, paddingHorizontal: 16 }}> 
         {children}
       </View>
     </Container>
