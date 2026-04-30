@@ -15,7 +15,7 @@
 import { getAnalyzeUrl } from '@/config/backend';
 import { auth } from '@/config/firebaseConfig';
 import type { GameMetrics } from '@/hooks/useSnakeGame';
-import { createFormData, uploadAudioWithTimeout, type UploadResult } from '@/services/audio';
+import { createFormData, uploadAudioWithTimeout, appendFormDataFields, type UploadResult } from '@/services/audio';
 import { saveExerciseAttempt } from '@/services/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -122,26 +122,14 @@ export async function analyzeSnakeAudio(
       
       const formData = createFormData(audioUri);
       
-      // Add required game metrics per contract
-      formData.append('durationAchieved', gameMetrics.durationAchieved.toString());
-      formData.append('targetDuration', gameMetrics.targetDuration.toString());
-      formData.append('completionPercentage', gameMetrics.completionPercentage.toString());
-      
-      if (promptPhoneme) {
-        try {
-          formData.append('targetPhoneme', promptPhoneme);
-        } catch (_) {
-          // Ignore if form append fails
-        }
-      }
-      
-      if (tier) {
-        try {
-          formData.append('tier', tier.toString());
-        } catch (_) {
-          // Ignore if form append fails
-        }
-      }
+      // Add game metrics and optional fields
+      appendFormDataFields(formData, {
+        durationAchieved: gameMetrics.durationAchieved,
+        targetDuration: gameMetrics.targetDuration,
+        completionPercentage: gameMetrics.completionPercentage,
+        targetPhoneme: promptPhoneme,
+        tier: tier,
+      });
       // Use new /snake/analyze endpoint
       const url = getAnalyzeUrl('snake');
       
@@ -154,7 +142,7 @@ export async function analyzeSnakeAudio(
         continue; // Retry
       }
 
-      const apiResponse = result.json as SnakeAPIResponse;
+      const apiResponse = result.json as unknown as SnakeAPIResponse;
       console.log('[SnakeAnalysis] Backend result:', apiResponse);
 
       // Check for API-level errors
@@ -228,21 +216,6 @@ export async function analyzeSnakeAudio(
 }
 
 /**
- * Get encouragement message based on stars and feedback
- * 
- * US4: Non-corrective feedback
- * - 3 stars: Celebratory
- * - 1 star: Gentle encouragement
- */
-export function getStarFeedback(stars: number, baseMessage: string): string {
-  if (stars === 3) {
-    return baseMessage || 'Smooth Slider! Amazing work! 🌟';
-  } else {
-    return baseMessage || 'Good try! Let\'s make it smoother next time. You\'ve got this! 💪';
-  }
-}
-
-/**
  * Queue failed analysis attempt for offline retry
  * Stores in AsyncStorage for later processing when network returns
  */
@@ -281,92 +254,4 @@ async function getOfflineQueue(): Promise<QueuedAttempt[]> {
   }
 }
 
-/**
- * Process offline queue - attempt to send queued analyses
- * Call this when network becomes available or on app start
- * 
- * @returns Number of successfully processed attempts
- */
-export async function processOfflineQueue(): Promise<number> {
-  try {
-    const queue = await getOfflineQueue();
-    if (queue.length === 0) {
-      return 0;
-    }
 
-    console.log('[SnakeAnalysis] Processing offline queue:', queue.length, 'attempts');
-    let successCount = 0;
-    const remaining: QueuedAttempt[] = [];
-
-    for (const attempt of queue) {
-      // Skip if too old (>7 days)
-      const ageInDays = (Date.now() - attempt.timestamp) / (1000 * 60 * 60 * 24);
-      if (ageInDays > 7) {
-        console.log('[SnakeAnalysis] Skipping stale queued attempt (age:', ageInDays.toFixed(1), 'days)');
-        continue;
-      }
-
-      // Try to send
-      const result = await analyzeSnakeAudio(
-        attempt.audioUri,
-        attempt.gameMetrics,
-        attempt.promptPhoneme
-      );
-
-      if (result) {
-        successCount++;
-        console.log('[SnakeAnalysis] Successfully processed queued attempt');
-      } else {
-        // Keep in queue if still failing and under retry limit
-        if (attempt.retryCount < MAX_RETRY_ATTEMPTS) {
-          remaining.push({
-            ...attempt,
-            retryCount: attempt.retryCount + 1,
-          });
-        } else {
-          console.log('[SnakeAnalysis] Dropping queued attempt after max retries');
-        }
-      }
-    }
-
-    // Save remaining queue
-    await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
-    console.log('[SnakeAnalysis] Queue processing complete. Success:', successCount, 'Remaining:', remaining.length);
-
-    return successCount;
-  } catch (error) {
-    console.error('[SnakeAnalysis] Error processing offline queue:', error);
-    return 0;
-  }
-}
-
-/**
- * Clear offline queue (for debugging or manual cleanup)
- */
-export async function clearOfflineQueue(): Promise<void> {
-  try {
-    await AsyncStorage.removeItem(OFFLINE_QUEUE_KEY);
-    console.log('[SnakeAnalysis] Offline queue cleared');
-  } catch (error) {
-    console.error('[SnakeAnalysis] Failed to clear offline queue:', error);
-  }
-}
-
-/**
- * Get offline queue status for debugging
- */
-export async function getOfflineQueueStatus(): Promise<{
-  count: number;
-  oldestTimestamp: number | null;
-}> {
-  try {
-    const queue = await getOfflineQueue();
-    return {
-      count: queue.length,
-      oldestTimestamp: queue.length > 0 ? Math.min(...queue.map(a => a.timestamp)) : null,
-    };
-  } catch (error) {
-    console.error('[SnakeAnalysis] Failed to get queue status:', error);
-    return { count: 0, oldestTimestamp: null };
-  }
-}

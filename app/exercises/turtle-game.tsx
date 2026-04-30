@@ -289,15 +289,12 @@ export default function TalkingTurtle() {
           }
 
           // NEW: Save session to global history for Progress Tab
-          const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
-          const { db } = await import('@/config/firebaseConfig');
-          await addDoc(collection(db, `users/${auth.currentUser.uid}/practice_sessions`), {
-            gameId: 'turtle',
-            timestamp: serverTimestamp(),
+          const { savePracticeSession } = await import('@/services/firestore');
+          await savePracticeSession(auth.currentUser.uid, 'turtle', {
             word: targetItem.text,
             tier: targetItem.tier,
             isSuccess: isCorrect,
-            wpm: clientResult.wpm, // Save WPM too
+            wpm: clientResult.wpm,
             feedback: result.feedback
           });
           console.log('💾 Turtle Session saved');

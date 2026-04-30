@@ -1,12 +1,15 @@
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
+import type { UploadResult } from '@/types/shared';
 
-export type UploadResult = {
-  ok: boolean;
-  status: number;
-  json?: any;
-  error?: string;
-};
+export type { UploadResult } from '@/types/shared';
+
+// Type for React Native file objects that FormData accepts
+interface RNFileObject {
+  uri: string;
+  name: string;
+  type: string;
+}
 
 export function getMimeFromUri(uri: string): string {
   const ext = uri.split('.').pop()?.toLowerCase();
@@ -32,9 +35,9 @@ export function getMimeFromUri(uri: string): string {
 export function createFormData(uri: string): FormData {
   const type = getMimeFromUri(uri);
   const name = `recording.${type.split('/')[1] ?? 'm4a'}`;
-  const file: any = { uri, name, type };
+  const file: RNFileObject = { uri, name, type };
   const form = new FormData();
-  form.append('file', file as any);
+  form.append('file', file as unknown as Blob);
   return form;
 }
 
@@ -50,7 +53,7 @@ export async function uploadAudioWithTimeout(url: string, formData: FormData, ti
     });
     clearTimeout(timer);
 
-    let data: any = null;
+    let data: Record<string, unknown> | undefined = undefined;
     try {
       data = await res.json();
     } catch (_) {
@@ -61,17 +64,27 @@ export async function uploadAudioWithTimeout(url: string, formData: FormData, ti
       return { ok: false, status: res.status, json: data, error: 'Invalid server response' };
     }
     return { ok: true, status: res.status, json: data };
-  } catch (e: any) {
-    const msg = e?.name === 'AbortError' ? 'Request timed out' : (e?.message ?? 'Network error');
+  } catch (e: unknown) {
+    const error = e as { name?: string; message?: string };
+    const msg = error?.name === 'AbortError' ? 'Request timed out' : (error?.message ?? 'Network error');
     return { ok: false, status: 0, error: msg };
   }
 }
 
-export async function deleteLocalFile(uri?: string | null): Promise<void> {
-  if (!uri) return;
-  try {
-    await FileSystem.deleteAsync(uri, { idempotent: true });
-  } catch {
-    // Ignore deletion errors
+/**
+ * Append optional metadata fields to FormData
+ * Safely handles string/number conversions and ignores failures
+ */
+export function appendFormDataFields(
+  form: FormData,
+  fields: Record<string, string | number | undefined | null>
+): void {
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined || value === null) continue;
+    try {
+      form.append(key, String(value));
+    } catch (_) {
+      // Ignore if form append fails
+    }
   }
 }

@@ -47,9 +47,3 @@ export function getPhonemeVoicePrompt(example: string): string {
   return phonemeVoiceMap[example] || example;
 }
 
-/**
- * Check if a phoneme example needs voice conversion
- */
-export function needsVoiceConversion(example: string): boolean {
-  return example in phonemeVoiceMap;
-}

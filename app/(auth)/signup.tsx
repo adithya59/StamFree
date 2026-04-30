@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, router } from 'expo-router';
 import { createUserWithEmailAndPassword, sendEmailVerification, signOut, updateProfile } from 'firebase/auth';
+import { type FirebaseError } from '@/types/shared';
 import { doc, setDoc } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
@@ -140,7 +141,9 @@ export default function CreateAccountScreen() {
       const user = userCredential.user;
 
       // Update profile (non-blocking - don't wait for it)
-      updateProfile(user, { displayName: childName }).catch(() => {});
+      updateProfile(user, { displayName: childName }).catch((error) => {
+        console.warn('[Signup] Failed to update user profile:', error);
+      });
 
       // Store additional user data in Firestore (non-blocking)
       const selectedSpeechIssues = Object.entries(speechIssues)
@@ -162,40 +165,52 @@ export default function CreateAccountScreen() {
           balloon: { tier: 1, level: "word" },
           onetap: { tier: 1, level: "word" },
         },
-      }).catch(() => {});
+      }).catch((error) => {
+        console.error('[Signup] Failed to create user profile in Firestore:', error);
+        // Note: User is created in Auth but profile write failed. Frontend should show warning.
+        Alert.alert("Warning", "Account created but profile data may not have saved. Please try logging in.");
+      });
 
       // Store auth state locally (non-blocking)
-      AsyncStorage.setItem("authUser", JSON.stringify({ email, uid: user.uid })).catch(() => {});
+      AsyncStorage.setItem("authUser", JSON.stringify({ email, uid: user.uid })).catch((error) => {
+        console.warn('[Signup] Failed to store auth state in AsyncStorage:', error);
+      });
 
       // Send verification email (fire and forget)
-      sendEmailVerification(user).catch(() => {});
+      sendEmailVerification(user).catch((error) => {
+        console.warn('[Signup] Failed to send email verification:', error);
+      });
 
       // Sign out the user immediately - they must verify email and login manually  
       const signOutPromise = signOut(auth);
       const signOutTimeout = new Promise((_, reject) => 
         setTimeout(() => reject(new Error("SignOut timeout")), 3000)
       );
-      await Promise.race([signOutPromise, signOutTimeout]).catch(() => {});
+      await Promise.race([signOutPromise, signOutTimeout]).catch((error) => {
+        console.warn('[Signup] Failed to sign out after account creation:', error);
+      });
 
       // Clear any stored auth state
-      AsyncStorage.removeItem("authUser").catch(() => {});
+      AsyncStorage.removeItem("authUser").catch((error) => {
+        console.warn('[Signup] Failed to clear stored auth state:', error);
+      });
 
       clearTimeout(emergencyTimeout);
       setLoading(false);
-      
       // Navigate to email verification screen
       router.replace("/(auth)/email-verification");
       return;
-    } catch (error: any) {
+    } catch (error: unknown) {
       let errorMessage = "Failed to create account. Please try again.";
-      if (error.code === "auth/email-already-in-use") {
+      const firebaseError = error as FirebaseError;
+      if (firebaseError.code === "auth/email-already-in-use") {
         errorMessage = "This email is already in use.";
-      } else if (error.code === "auth/invalid-email") {
+      } else if (firebaseError.code === "auth/invalid-email") {
         errorMessage = "Invalid email address.";
-      } else if (error.code === "auth/weak-password") {
+      } else if (firebaseError.code === "auth/weak-password") {
         errorMessage = "Password is too weak.";
-      } else if (error.message?.includes("timed out")) {
-        errorMessage = error.message;
+      } else if (firebaseError.message?.includes("timed out")) {
+        errorMessage = firebaseError.message;
       }
       Alert.alert("Error", errorMessage);
     } finally {

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Pressable, Image, ImageSourcePropType } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import LottieView from 'lottie-react-native';
+import LottieView, { type LottieViewProps } from 'lottie-react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -11,7 +11,7 @@ interface GameCardProps {
   description?: string;
   iconSource?: ImageSourcePropType;
   iconName?: keyof typeof MaterialCommunityIcons.glyphMap;
-  lottieSource?: any;
+  lottieSource?: LottieViewProps['source'];
   gradientColors?: [string, string, ...string[]];
   darkGradientColors?: [string, string, ...string[]];
   onPress: () => void;

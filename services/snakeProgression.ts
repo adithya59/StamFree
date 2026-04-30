@@ -1,8 +1,5 @@
 /**
  * Snake Progression Helpers
- * 
- * Cleaned up version: Contains only logic relevant to the new Playlist architecture.
- * Legacy Level/Tier logic has been removed.
  */
 
 /**
@@ -66,31 +63,4 @@ export function getInstructionText(phoneme: string, tier: number, category: stri
 
   // 5. Default Fallback
   return `Say the sound and slide to ah: ${p.toLowerCase()}-aaaa`;
-}
-
-/**
- * Calculate XP reward based on performance
- * Kept as a utility for potentially calculating XP for other game modes or UI display
- */
-export function calculateXpReward(
-  baseXp: number,
-  starsAwarded: number,
-  completionPercentage: number
-): number {
-  let multiplier = 1.0;
-
-  // Star bonus
-  if (starsAwarded === 3) {
-    multiplier += 0.5; // 50% bonus for 3 stars
-  } else if (starsAwarded === 2) {
-    multiplier += 0.25; // 25% bonus for 2 stars
-  }
-  // 1 star = no bonus
-
-  // Completion bonus (if applicable)
-  if (completionPercentage >= 100) {
-    multiplier += 0.1; // 10% bonus for 100% completion
-  }
-
-  return Math.round(baseXp * multiplier);
 }

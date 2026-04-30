@@ -418,7 +418,7 @@ export const SnakePath: React.FC<SnakePathProps> = ({
         { scale: scale },
         { rotate: `${angle}deg` },
       ],
-    } as any;
+    };
   });
 
   // Animated style for head image (fixes Reanimated warning)

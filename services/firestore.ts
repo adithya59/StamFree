@@ -1,19 +1,14 @@
 import { db } from '@/config/firebaseConfig';
 import {
     doc,
-    setDoc
+    setDoc,
+    collection,
+    addDoc,
+    serverTimestamp
 } from 'firebase/firestore';
+import type { ExerciseAttemptPayload } from '@/types/shared';
 
-export type ExerciseAttemptPayload = {
-  uid: string;
-  exerciseType: 'turtle' | 'snake' | 'balloon' | 'onetap';
-  gamePass: boolean;
-  clinicalPass: boolean;
-  confidence: number;
-  feedback: string;
-  metrics: Record<string, number | boolean>;
-  createdAt?: string;
-};
+export type { ExerciseAttemptPayload } from '@/types/shared';
 
 /**
  * Saves a detailed log of an exercise attempt to users/{uid}/activity_logs
@@ -35,4 +30,22 @@ export async function saveExerciseAttempt(payload: ExerciseAttemptPayload) {
   });
 
   return { attemptId };
+}
+
+/**
+ * Save a practice session record for progress tracking
+ * Used by all games to log individual attempts
+ * Supports both 'tapping' (current) and 'onetap' (legacy) for backward compatibility
+ */
+export async function savePracticeSession(
+  uid: string,
+  gameId: 'snake' | 'turtle' | 'balloon' | 'tapping' | 'onetap',
+  sessionData: Record<string, any>
+): Promise<void> {
+  const sessionsRef = collection(db, `users/${uid}/practice_sessions`);
+  await addDoc(sessionsRef, {
+    gameId,
+    timestamp: serverTimestamp(),
+    ...sessionData,
+  });
 }

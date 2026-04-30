@@ -8,6 +8,7 @@ import Animated, {
   withTiming
 } from 'react-native-reanimated';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import type { SymbolViewProps } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /* 
@@ -15,6 +16,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  * A custom tab bar with a sleek "floating pill" design and a sliding active indicator.
  * It uses react-native-reanimated for 60fps animations on the UI thread.
  */
+
+interface TabItemProps {
+  isFocused: boolean;
+  onPress: () => void;
+  onLongPress: () => void;
+  iconName: SymbolViewProps['name'];
+  label: string;
+  inactiveColor: string;
+}
 
 export function AnimatedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
@@ -83,7 +93,7 @@ export function AnimatedTabBar({ state, descriptors, navigation }: BottomTabBarP
           };
 
           // Icon Mapping based on route name
-          let iconName = 'house.fill';
+          let iconName: SymbolViewProps['name'] = 'house.fill';
           if (route.name === 'progress') iconName = 'chart.bar.fill';
           if (route.name === 'profile') iconName = 'person.fill';
 
@@ -93,7 +103,7 @@ export function AnimatedTabBar({ state, descriptors, navigation }: BottomTabBarP
               isFocused={isFocused}
               onPress={onPress}
               onLongPress={onLongPress}
-              iconName={iconName as any}
+              iconName={iconName}
               label={options.title || route.name}
               inactiveColor={inactiveIconColor}
             />
@@ -105,7 +115,7 @@ export function AnimatedTabBar({ state, descriptors, navigation }: BottomTabBarP
 }
 
 // Sub-component for individual tab items with scale animation
-const TabItem = ({ isFocused, onPress, onLongPress, iconName, label, inactiveColor }: any) => {
+const TabItem = ({ isFocused, onPress, onLongPress, iconName, label, inactiveColor }: TabItemProps) => {
   const scale = useSharedValue(1);
 
   useEffect(() => {

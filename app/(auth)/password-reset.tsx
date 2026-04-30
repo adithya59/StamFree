@@ -1,6 +1,7 @@
 import { auth } from '@/config/firebaseConfig';
 import { router } from 'expo-router';
 import { sendPasswordResetEmail } from 'firebase/auth';
+import { type FirebaseError } from '@/types/shared';
 import React, { useState } from 'react';
 import { Alert, View, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
@@ -37,13 +38,14 @@ export default function PasswordResetScreen() {
           },
         ]
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       let errorMessage = 'Failed to send reset email';
-      if (error.code === 'auth/user-not-found') {
+      const firebaseError = error as FirebaseError;
+      if (firebaseError.code === 'auth/user-not-found') {
         errorMessage = 'No account found with this email';
-      } else if (error.code === 'auth/invalid-email') {
+      } else if (firebaseError.code === 'auth/invalid-email') {
         errorMessage = 'Invalid email address';
-      } else if (error.code === 'auth/too-many-requests') {
+      } else if (firebaseError.code === 'auth/too-many-requests') {
         errorMessage = 'Too many requests. Please try again later.';
       }
       Alert.alert('Error', errorMessage);

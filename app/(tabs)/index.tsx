@@ -62,7 +62,7 @@ export default function HomeScreen() {
           title={item.title}
           description={item.description}
           iconSource={item.iconSource}
-          iconName={item.iconName as any}
+          iconName={item.iconName}
           lottieSource={item.lottieSource}
           delay={index * 100}
           gradientColors={item.gradientColors}
@@ -77,7 +77,7 @@ export default function HomeScreen() {
   const renderHeader = () => (
     <View className="mb-6 mt-4">
       <View className="pt-2 pb-6">
-        <H1 className="mb-2">Welcome Back! 👋</H1>
+        <H1 className="mb-2">Welcome Back!</H1>
         <P>Choose an exercise to get started today.</P>
         {stutterTypes.length > 0 && stutterTypes[0] !== 'fluent' && (
           <View className="mt-2 bg-teal-100 dark:bg-teal-900/30 px-4 py-2 rounded-xl self-start">

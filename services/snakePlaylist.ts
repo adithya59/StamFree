@@ -1,5 +1,6 @@
 import { db } from '@/config/firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc, collection, addDoc, getDocs, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { savePracticeSession } from '@/services/firestore';
 
 // --- Types ---
 
@@ -175,13 +176,10 @@ export async function recordSnakeSessionResult(
 
   // Write to practice_sessions so progress screen graph can read it
   try {
-    const sessionsRef = collection(db, `users/${userId}/practice_sessions`);
-    await addDoc(sessionsRef, {
-      gameId: 'snake',
+    await savePracticeSession(userId, 'snake', {
       phoneme: phonemeId,
       isSuccess,
       stars,
-      timestamp: serverTimestamp(),
     });
   } catch (e) {
     console.error('[snakePlaylist] Failed to write practice_session:', e);

@@ -1,16 +1,9 @@
 import { db } from '@/config/firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { savePracticeSession } from '@/services/firestore';
+import type { TurtleContent } from '@/types/turtle';
 
-// --- Types ---
-
-export interface TurtleContent {
-  id: string;
-  text: string;
-  wordCount: number;
-  tier: 1 | 2 | 3;
-  requiredPauses?: number;  // NEW: For Tier 2/3 pause requirements
-  chunkedText?: string;  // NEW: Text with pause markers (e.g., "I put my books | in my bag")
-}
+export type { TurtleContent } from '@/types/turtle';
 
 export interface TurtlePlaylist {
   userId: string;

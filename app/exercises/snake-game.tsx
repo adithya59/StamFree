@@ -18,6 +18,7 @@ import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
 import { H1, H2, P } from '@/components/ui/Typography';
 import { SNAKE_CONFIG } from '@/constants/snakeConfig';
 import type { GameMetrics } from '@/hooks/useSnakeGame';
+import type { PhonemeData } from '@/types/snake';
 import { useSnakeSession } from '@/hooks/useSnakeSession';
 import { getPhonemeVoicePrompt } from '@/services/phonemeVoice';
 import { getInstructionText } from '@/services/snakeProgression';
@@ -95,11 +96,11 @@ export default function SnakeGameScreen() {
   const [activePhonemeCount, setActivePhonemeCount] = useState<number>(0);
   const [masteredPhonemeCount, setMasteredPhonemeCount] = useState<number>(0);
   const [showProgressModal, setShowProgressModal] = useState(false);
-  const [activePhonemes, setActivePhonemes] = useState<any[]>([]);
-  const [masteredPhonemes, setMasteredPhonemes] = useState<any[]>([]);
-  const [lockedPhonemes, setLockedPhonemes] = useState<any[]>([]);
+  const [activePhonemes, setActivePhonemes] = useState<PhonemeData[]>([]);
+  const [masteredPhonemes, setMasteredPhonemes] = useState<PhonemeData[]>([]);
+  const [lockedPhonemes, setLockedPhonemes] = useState<PhonemeData[]>([]);
   const [phonemeStats, setPhonemeStats] = useState<Record<string, { attempts: number; successCount: number }>>({});
-  const [phonemePool, setPhonemePool] = useState<Record<string, any>>({});
+  const [phonemePool, setPhonemePool] = useState<Record<string, PhonemeData>>({});
 
   // Determine voicing requirement based on category/tier
   const isVoicedTarget = sessionConfig ? (sessionConfig.tier === 1 || sessionConfig.tier === 2) : false;
@@ -113,9 +114,9 @@ export default function SnakeGameScreen() {
     const fetchPool = async () => {
       try {
         const snap = await getDocs(collection(db, 'snake_phoneme_pool'));
-        const pool: Record<string, any> = {};
+        const pool: Record<string, PhonemeData> = {};
         snap.forEach((d) => {
-          pool[d.id] = { id: d.id, ...d.data() };
+          pool[d.id] = { id: d.id, ...d.data() } as PhonemeData;
         });
         setPhonemePool(pool);
       } catch (e) {
@@ -139,9 +140,9 @@ export default function SnakeGameScreen() {
         const allIds = Object.keys(phonemePool);
         const lockedIds = allIds.filter(id => !activeIds.includes(id) && !masteredIds.includes(id));
         
-        setActivePhonemes(activeIds.map((id: string) => phonemePool[id]).filter((p: any) => p));
-        setMasteredPhonemes(masteredIds.map((id: string) => phonemePool[id]).filter((p: any) => p));
-        setLockedPhonemes(lockedIds.map((id: string) => phonemePool[id]).filter((p: any) => p));
+        setActivePhonemes(activeIds.map((id: string) => phonemePool[id]).filter((p: PhonemeData | undefined): p is PhonemeData => !!p));
+        setMasteredPhonemes(masteredIds.map((id: string) => phonemePool[id]).filter((p: PhonemeData | undefined): p is PhonemeData => !!p));
+        setLockedPhonemes(lockedIds.map((id: string) => phonemePool[id]).filter((p: PhonemeData | undefined): p is PhonemeData => !!p));
       }
     }, (err) => {
       console.error('[SnakeGame] Error listening to playlist:', err);

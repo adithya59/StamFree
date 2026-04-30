@@ -5,7 +5,6 @@ import random
 import numpy as np
 import librosa
 import torch
-import torch.nn.functional as F
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -150,8 +149,9 @@ def predict_file(audio_input, return_all_scores=False):
             # Ensure mono
             if len(audio.shape) > 1:
                 audio = np.mean(audio, axis=1)
-        except Exception:
+        except Exception as sf_error:
             # FALLBACK: Librosa (handles mp3/m4a/resampling)
+            print(f"ℹ️ Soundfile read failed (expected for non-WAV), falling back to librosa: {sf_error}")
             audio, sr = librosa.load(audio_input, sr=16000)
     else:
         audio = audio_input  # Assume already at 16kHz
@@ -197,17 +197,33 @@ def predict_file(audio_input, return_all_scores=False):
     return label, score.item()
 
 
+def convert_audio_to_wav_buffer(file_path):
+    """Convert any audio format to WAV BytesIO buffer for Google STT.
+    Uses librosa as primary loader to handle .m4a, .mp3, etc. robustly.
+    """
+    try:
+        audio, sr = librosa.load(file_path, sr=16000, mono=True)
+        wav_buffer = io.BytesIO()
+        sf.write(wav_buffer, audio, sr, format='WAV')
+        wav_buffer.seek(0)
+        return wav_buffer.getvalue()
+        
+    except Exception as e:
+        print(f"❌ Audio conversion failed: {e}")
+        return None
+
+
 def get_google_transcript(file_path):
     """Returns transcript and word-level timestamps."""
     try:
-        client = speech.SpeechClient()
-        audio = AudioSegment.from_file(file_path)
-        audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-        wav_data = io.BytesIO()
-        audio.export(wav_data, format="wav")
-        content = wav_data.getvalue()
+        # Convert audio to WAV buffer
+        wav_content = convert_audio_to_wav_buffer(file_path)
+        if not wav_content:
+            print(f"❌ Failed to convert audio file")
+            return "", []
 
-        audio_file = speech.RecognitionAudio(content=content)
+        client = speech.SpeechClient()
+        audio_file = speech.RecognitionAudio(content=wav_content)
         config = speech.RecognitionConfig(
             encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=16000,
@@ -232,7 +248,7 @@ def get_google_transcript(file_path):
                 )
         return full_text.strip(), words
     except Exception as e:
-        print(f"STT Error: {e}")
+        print(f"❌ STT Error: {e}")
         return "", []
 
 
@@ -275,7 +291,8 @@ def analyze_voicing_noise(filepath):
             pitched_ratio = (
                 float(voiced_frames) / float(total_frames) if total_frames > 0 else 0.0
             )
-        except:
+        except Exception as pitch_error:
+            print(f"⚠️ Pitch detection failed: {pitch_error}")
             pitched_ratio = 0.0
 
         voiced_detected = pitched_ratio >= PITCHED_RATIO_MIN
@@ -319,7 +336,8 @@ def analyze_amplitude(filepath, threshold=0.02, min_duration=1.5):
             "duration_sec": round(sustained_duration, 2),
             "amplitude_sustained": amplitude_sustained,
         }
-    except:
+    except Exception as amp_error:
+        print(f"⚠️ Amplitude analysis failed: {amp_error}")
         return {"duration_sec": 0, "amplitude_sustained": False}
 
 
@@ -348,7 +366,8 @@ def detect_breath(filepath, silence_threshold=0.01, min_silence=0.3):
                         }
                 silence_count = 0
         return {"breath_detected": has_silence, "amplitude_onset": 0.0}
-    except:
+    except Exception as breath_error:
+        print(f"⚠️ Breath detection failed: {breath_error}")
         return {"breath_detected": False, "amplitude_onset": 0.0}
 
 
@@ -536,8 +555,20 @@ def analyze_snake():
     if not any(filename.lower().endswith(ext) for ext in [f".{e}" for e in ALLOWED_EXTENSIONS]):
         return jsonify({"success": False, "error": "Invalid format", "code": "INVALID_FORMAT"}), 400
 
-    filepath = os.path.join(os.getcwd(), filename)
-    file.save(filepath)
+    # Save original file
+    upload_filepath = os.path.join(os.getcwd(), filename)
+    file.save(upload_filepath)
+    
+    # Convert to WAV for consistent processing
+    filepath = os.path.join(os.getcwd(), "snake_session.wav")
+    try:
+        print(f"🔄 Converting audio to WAV: {upload_filepath} -> {filepath}")
+        audio, sr = librosa.load(upload_filepath, sr=16000, mono=True)
+        sf.write(filepath, audio, sr, format='WAV')
+        print(f"✅ Audio converted to WAV successfully")
+    except Exception as conv_error:
+        print(f"❌ Audio conversion failed: {conv_error}")
+        return jsonify({"success": False, "error": "Failed to convert audio", "code": "CONVERSION_FAILED"}), 400
     
     # Retrieve Game Data
     target_phoneme = request.form.get("targetPhoneme") or request.form.get("prompt_phoneme")
@@ -591,8 +622,9 @@ def analyze_snake():
                             break
                     if found:
                         break
-                except:
-                    pass
+                except Exception as phoneme_error:
+                    print(f"⚠️ Phoneme mapping failed for '{w.get('word', '?')}': {phoneme_error}")
+                    continue
             phoneme_match = found
         
         # Simple fallback: If STT fails and target is nasal, just check if they're humming
@@ -710,6 +742,12 @@ def analyze_snake():
         return jsonify({"success": False, "error": str(e), "code": "INTERNAL_ERROR"}), 500
 
     finally:
+        # Clean up both original and converted files
+        if os.path.exists(upload_filepath):
+            try:
+                os.remove(upload_filepath)
+            except:
+                pass
         if os.path.exists(filepath):
             try:
                 os.remove(filepath)
@@ -783,13 +821,21 @@ def analyze_tapping():
     try:
         syllables = json.loads(syllables_json)
         taps = json.loads(taps_json)
-    except:
+    except json.JSONDecodeError:
         syllables = []
         taps = []
 
     filename = secure_filename(file.filename)
-    filepath = os.path.join(os.getcwd(), filename)
-    file.save(filepath)
+    upload_filepath = os.path.join(os.getcwd(), filename)
+    file.save(upload_filepath)
+
+    wav_filepath = os.path.join(os.getcwd(), "tapping_session.wav")
+    try:
+        audio, sr = librosa.load(upload_filepath, sr=16000, mono=True)
+        sf.write(wav_filepath, audio, sr, format='WAV')
+    except Exception as conv_error:
+        print(f"❌ Audio conversion failed: {conv_error}")
+        return jsonify({"error": "Failed to convert audio"}), 400
 
     try:
         t0 = time.time()
@@ -800,7 +846,7 @@ def analyze_tapping():
         syllable_matches = [False] * len(syllables)
         
         try:
-            transcript, words_data = get_google_transcript(filepath)
+            transcript, words_data = get_google_transcript(wav_filepath)
             
             # --- PHONEME MATCHING LOGIC ---
             # 1. Convert Transcript to Phonemes (clean numbers/stress)
@@ -824,8 +870,8 @@ def analyze_tapping():
                         match_found = True
                         syllable_matches[i] = True
                         
-                except Exception as e:
-                    print(f"Error matching syllable '{syl}': {e}")
+                except Exception:
+                    pass
 
             # Get average confidence
             if words_data:
@@ -834,8 +880,8 @@ def analyze_tapping():
         except Exception as e:
             print(f"STT Error: {e}")
 
-        # 2. WaveLM (Fluency Verification)
-        label, wavlm_score = predict_file(filepath)
+        # 2. WaveLM (Fluency Verification) - Use converted WAV file
+        label, wavlm_score = predict_file(wav_filepath)
         is_fluent = "fluent" in label.lower()
         
         # 3. Rhythm/Tap Analysis
@@ -843,7 +889,6 @@ def analyze_tapping():
         
         # 4. Feedback Generation
         feedback = ""
-        pecky_state = "idle"
         
         correct_syllables_count = sum(syllable_matches)
         all_syllables_correct = correct_syllables_count == len(syllables)
@@ -854,22 +899,17 @@ def analyze_tapping():
         if all_syllables_correct:
             if is_fluent:
                 feedback = "Perfect! You said every part clearly!"
-                pecky_state = "success"
             else:
                 feedback = "Great job getting the words right, but try to be smoother."
-                pecky_state = "peck"
         elif correct_syllables_count > 0:
             feedback = f"You got {correct_syllables_count} out of {len(syllables)} parts. Keep trying!"
-            pecky_state = "peck"
         else:
             feedback = "I didn't hear the parts clearly. Try saying them louder."
-            pecky_state = "confused"
             
         return jsonify({
             "accuracy": accuracy,
             "transcript": transcript,
             "feedback": feedback,
-            "pecky_state": pecky_state,
             "is_sync": tap_count_match,
             "fluent": is_fluent,
             "syllable_matches": syllable_matches
@@ -880,117 +920,13 @@ def analyze_tapping():
         return jsonify({"error": str(e)}), 500
         
     finally:
-        if os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-            except:
-                pass
-
-
-@app.route("/analyze/onetap", methods=["POST"])
-def analyze_onetap():
-    """
-    One-Tap Game Analysis: Word Count + Duration Validation
-    
-    Strategy:
-    - Use Google STT to count words (1 word = success, >1 = repetition)
-    - Validate duration (0.5x to 2.5x expected duration)
-    - Use WavLM as fallback confidence check
-    """
-    if "audio" not in request.files:
-        return jsonify({"error": "No audio file"}), 400
-    
-    file = request.files["audio"]
-    target_word = request.form.get("target_word", "").strip()
-    syllables_json = request.form.get("syllables", "[]")
-    duration = float(request.form.get("duration", 0))
-    
-    # Parse syllables
-    import json
-    try:
-        syllables = json.loads(syllables_json)
-    except:
-        syllables = []
-    
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(os.getcwd(), filename)
-    file.save(filepath)
-
-    try:
-        t0 = time.time()
-
-        # 1. Google STT for word count
-        transcript = ""
-        word_count = 0
-        stt_confidence = 0.0
-        
-        try:
-            transcript, words_data = get_google_transcript(filepath)
-            transcript = transcript.strip()
-            
-            # Count words
-            word_list = [w for w in transcript.lower().split() if w]
-            word_count = len(word_list)
-            
-            # Average word confidence
-            if words_data:
-                stt_confidence = sum(w.get("confidence", 0) for w in words_data) / len(words_data)
-        except Exception as e:
-            print(f"STT Error: {e}")
-            word_count = -1
-
-        # 2. Duration validation
-        syllable_count = len(syllables) if syllables else 2
-        expected_duration = (syllable_count * 0.15) + 0.5
-        
-        min_duration = expected_duration * 0.5
-        max_duration = expected_duration * 2.5
-        duration_valid = min_duration <= duration <= max_duration
-        
-        # 3. WavLM check
-        label, wavlm_score = predict_file(filepath)
-        is_fluent = "fluent" in label.lower()
-        
-        # 4. Final decision
-        repetition_detected = False
-        repetition_probability = 0.0
-        
-        if word_count > 1:
-            repetition_detected = True
-            repetition_probability = 0.9
-        elif word_count == 1 and duration_valid and is_fluent:
-            repetition_detected = False
-            repetition_probability = 0.1
-        elif not duration_valid and duration > max_duration:
-            repetition_detected = True
-            repetition_probability = 0.7
-        elif not is_fluent:
-            repetition_detected = True
-            repetition_probability = wavlm_score
-        else:
-            repetition_detected = False
-            repetition_probability = 0.3
-        
-        return jsonify(
-            {
-                "repetition_detected": repetition_detected,
-                "repetition_probability": repetition_probability,
-                "confidence": max(stt_confidence, wavlm_score),
-                "word_count": word_count,
-                "transcript": transcript,
-                "duration_valid": duration_valid,
-                "expected_duration": expected_duration,
-                "wavlm_label": label,
-                "wavlm_confidence": wavlm_score,
-                "elapsed_ms": int((time.time() - t0) * 1000),
-            }
-        )
-    finally:
-        if os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-            except:
-                pass
+        # Clean up both original and converted files
+        for path in [upload_filepath, wav_filepath]:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except:
+                    pass
 
 
 # ---------------------------------------------------------
@@ -1004,8 +940,19 @@ def analyze_turtle():
         return jsonify({"success": False, "error": "Missing audio"}), 400
 
     filename = secure_filename(file.filename)
-    filepath = os.path.join(os.getcwd(), filename)
-    file.save(filepath)
+    upload_filepath = os.path.join(os.getcwd(), filename)
+    file.save(upload_filepath)
+    
+    # Convert to WAV for consistent processing
+    filepath = os.path.join(os.getcwd(), "turtle_session.wav")
+    try:
+        print(f"🔄 Converting audio to WAV: {upload_filepath} -> {filepath}")
+        audio, sr = librosa.load(upload_filepath, sr=16000, mono=True)
+        sf.write(filepath, audio, sr, format='WAV')
+        print(f"✅ Audio converted to WAV successfully")
+    except Exception as conv_error:
+        print(f"❌ Audio conversion failed: {conv_error}")
+        return jsonify({"success": False, "error": "Failed to convert audio"}), 400
     
     # Get params
     target_text = request.form.get("targetText", "")
@@ -1107,6 +1054,12 @@ def analyze_turtle():
             "error": str(e)
         }), 500
     finally:
+        # Clean up both original and converted files
+        if os.path.exists(upload_filepath):
+            try:
+                os.remove(upload_filepath)
+            except:
+                pass
         if os.path.exists(filepath):
             try:
                 os.remove(filepath)

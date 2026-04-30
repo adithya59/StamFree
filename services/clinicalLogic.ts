@@ -1,40 +1,13 @@
-export type TurtleResponse = {
-  wpm: number;
-  game_pass: boolean;
-  stutter_detected: boolean;
-  block_detected: boolean;
-  clinical_pass: boolean;
-  confidence: number;
-  feedback: string;
-  pauseBonus?: boolean;  // NEW: Tier 2/3 pause detection bonus
-  detectedPauses?: number;  // NEW: Number of pauses detected
-};
+/**
+ * Clinical Logic Normalization
+ * 
+ * Converts game-specific backend responses into a unified result format
+ * for consistent handling across all game types.
+ */
 
-export type BalloonResponse = {
-  breath_detected: boolean;
-  amplitude_onset: number;
-  game_pass: boolean;
-  hard_attack_detected: boolean;
-  clinical_pass: boolean;
-  confidence: number;
-  feedback: string;
-};
+import type { TurtleResponse, BalloonResponse, TappingResponse, UnifiedResult } from '@/types/shared';
 
-export type OneTapResponse = {
-  repetition_detected: boolean;
-  repetition_prob: number;
-  clinical_pass: boolean;
-  confidence: number;
-  feedback: string;
-};
-
-export type UnifiedResult = {
-  game_pass: boolean;
-  clinical_pass: boolean;
-  feedback: string;
-  confidence: number;
-  metrics: Record<string, number | boolean>;
-};
+export type { TurtleResponse, BalloonResponse, TappingResponse, UnifiedResult } from '@/types/shared';
 
 export function normalizeTurtle(res: TurtleResponse): UnifiedResult {
   return {
@@ -48,33 +21,6 @@ export function normalizeTurtle(res: TurtleResponse): UnifiedResult {
       block_detected: res.block_detected,
       ...(typeof res.pauseBonus === 'boolean' ? { pauseBonus: res.pauseBonus } : {}),
       ...(typeof res.detectedPauses === 'number' ? { detectedPauses: res.detectedPauses } : {}),
-    },
-  };
-}
-
-export function normalizeBalloon(res: BalloonResponse): UnifiedResult {
-  return {
-    game_pass: res.game_pass,
-    clinical_pass: res.clinical_pass,
-    feedback: res.feedback,
-    confidence: res.confidence,
-    metrics: {
-      breath_detected: res.breath_detected,
-      amplitude_onset: res.amplitude_onset,
-      hard_attack_detected: res.hard_attack_detected,
-    },
-  };
-}
-
-export function normalizeOneTap(res: OneTapResponse): UnifiedResult {
-  return {
-    game_pass: true, // AI-only; no game logic
-    clinical_pass: res.clinical_pass,
-    feedback: res.feedback,
-    confidence: res.confidence,
-    metrics: {
-      repetition_detected: res.repetition_detected,
-      repetition_prob: res.repetition_prob,
     },
   };
 }

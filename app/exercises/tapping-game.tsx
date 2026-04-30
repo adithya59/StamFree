@@ -13,7 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useState } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/config/firebaseConfig';
 import LottieView from 'lottie-react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -21,6 +21,7 @@ import {
     ActivityIndicator,
     Dimensions,
     ImageBackground,
+    ImageSourcePropType,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -35,22 +36,10 @@ interface SyllableWord {
     id: string;
     word: string;
     syllables: string[];
-    image?: any;
+    image?: ImageSourcePropType;
     tier?: number;
     ttsSyllables?: string[];
 }
-
-import { oneTapPool } from '@/services/seedOneTap';
-
-const PRACTICE_WORDS: SyllableWord[] = oneTapPool
-    .sort((a, b) => a.tier - b.tier)
-    .map(item => ({
-        id: item.id,
-        word: item.text,
-        syllables: item.syllables.map(s => s.toUpperCase()),
-        tier: item.tier,
-        ttsSyllables: item.ttsSyllables
-    }));
 
 export default function TappingGameScreen() {
     const {
@@ -65,23 +54,50 @@ export default function TappingGameScreen() {
         reset
     } = useTappingSession();
 
+    const [practiceWords, setPracticeWords] = useState<SyllableWord[]>([]);
     const [currentWordIndex, setCurrentWordIndex] = useState(0);
     const [loadingProgress, setLoadingProgress] = useState(true);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
 
+    // Load Tapping content from Firestore
+    useEffect(() => {
+        const loadTappingContent = async () => {
+            try {
+                const querySnapshot = await getDocs(collection(db, 'tapping_content_pool'));
+                const words: SyllableWord[] = querySnapshot.docs
+                    .map(doc => {
+                        const data = doc.data();
+                        return {
+                            id: data.id,
+                            word: data.text,
+                            syllables: data.syllables.map((s: string) => s.toUpperCase()),
+                            tier: data.tier,
+                            ttsSyllables: data.syllables
+                        };
+                    })
+                    .sort((a, b) => (a.tier || 1) - (b.tier || 1));
+                setPracticeWords(words);
+            } catch (e) {
+                console.error('Error loading Tapping content:', e);
+                setPracticeWords([]);
+            }
+        };
+        loadTappingContent();
+    }, []);
+
     // Fetch saved progress on mount
     useEffect(() => {
         const fetchProgress = async () => {
-            if (!auth.currentUser) {
+            if (!auth.currentUser || practiceWords.length === 0) {
                 setLoadingProgress(false);
                 return;
             }
             try {
-                const docRef = doc(db, `users/${auth.currentUser.uid}/games/onetap`);
+                const docRef = doc(db, `users/${auth.currentUser.uid}/games/tapping`);
                 const snap = await getDoc(docRef);
                 if (snap.exists()) {
                     const data = snap.data();
-                    if (data.currentIndex !== undefined && data.currentIndex < PRACTICE_WORDS.length) {
+                    if (data.currentIndex !== undefined && data.currentIndex < practiceWords.length) {
                         setCurrentWordIndex(data.currentIndex);
                     }
                 }
@@ -92,7 +108,7 @@ export default function TappingGameScreen() {
             }
         };
         fetchProgress();
-    }, []);
+    }, [practiceWords]);
 
     // Show success modal when result arrives with good accuracy
     useEffect(() => {
@@ -104,12 +120,12 @@ export default function TappingGameScreen() {
 
     // Auto-start recording session once bubbles are loaded
     useEffect(() => {
-        if (!loadingProgress && !isRecording && !isProcessing && !lastResult) {
+        if (!loadingProgress && !isRecording && !isProcessing && !lastResult && practiceWords.length > 0) {
             startSession();
         }
-    }, [loadingProgress, currentWordIndex]);
+    }, [loadingProgress, currentWordIndex, practiceWords.length]);
 
-    const currentWord = PRACTICE_WORDS[currentWordIndex];
+    const currentWord = practiceWords[currentWordIndex];
 
     // Handle Syllable Tap — session is already running, just record taps
     // Last bubble tap = auto-stop
@@ -131,7 +147,7 @@ export default function TappingGameScreen() {
         reset();
         setShowSuccessModal(false);
         let nextIndex = 0;
-        if (currentWordIndex < PRACTICE_WORDS.length - 1) {
+        if (currentWordIndex < practiceWords.length - 1) {
             nextIndex = currentWordIndex + 1;
         } else {
             nextIndex = 0;
@@ -142,7 +158,7 @@ export default function TappingGameScreen() {
         // Save progress
         if (auth.currentUser) {
             try {
-                const docRef = doc(db, `users/${auth.currentUser.uid}/games/onetap`);
+                const docRef = doc(db, `users/${auth.currentUser.uid}/games/tapping`);
                 await setDoc(docRef, { currentIndex: nextIndex }, { merge: true });
             } catch (e) {
                 console.error('Error saving progress:', e);
@@ -174,10 +190,14 @@ export default function TappingGameScreen() {
             resizeMode="cover"
         >
             <SafeAreaView style={styles.safeArea}>
-                {loadingProgress ? (
+                {loadingProgress || practiceWords.length === 0 ? (
                     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                         <ActivityIndicator size="large" color="#4CAF50" />
                         <Text style={{ marginTop: 10, color: '#2E5077' }}>Loading Level...</Text>
+                    </View>
+                ) : !currentWord ? (
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                        <Text style={{ color: '#2E5077', fontSize: 16 }}>No content available</Text>
                     </View>
                 ) : (
                     <>

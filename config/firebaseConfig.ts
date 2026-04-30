@@ -1,10 +1,10 @@
 import { Platform } from 'react-native';
-import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from 'firebase/app';
 import { 
-  getReactNativePersistence, 
   initializeAuth,
-  browserLocalPersistence 
+  browserLocalPersistence,
+  getReactNativePersistence
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
@@ -32,8 +32,9 @@ if (Platform.OS === 'web') {
   });
 } else {
   // For React Native (Android/iOS)
+  // Use AsyncStorage for auth state persistence
   auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+    persistence: getReactNativePersistence(AsyncStorage),
   });
 }
 

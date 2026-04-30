@@ -1,13 +1,8 @@
 import { auth, db } from '@/config/firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import type { UserStats } from '@/types/shared';
 
-export interface UserStats {
-  currentStreak: number;
-  lastActivityDate: string | null; // ISO Date YYYY-MM-DD
-  sessionsThisWeek: number;
-  weekStartDate: string; // ISO Date YYYY-MM-DD of the current week's Monday
-  totalXP: number;
-}
+export type { UserStats } from '@/types/shared';
 
 function getMonday(d: Date) {
   d = new Date(d);

@@ -1,6 +1,6 @@
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import React, { useRef, useState, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 export interface TurtleVideoProps {
   /** The current step in the session (0 to totalSteps) */
@@ -13,7 +13,7 @@ export interface TurtleVideoProps {
   journeyIndex: number;
   /** Callback when a segment finishes playing */
   onSegmentComplete?: () => void;
-  style?: any; // Allow custom styles
+  style?: StyleProp<ViewStyle>;
 }
 
 // Mapping of journeyIndex to video sources

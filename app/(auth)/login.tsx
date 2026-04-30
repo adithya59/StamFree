@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { type FirebaseError } from '@/types/shared';
 import React, { useState } from 'react';
 import {
   Alert,
@@ -61,7 +62,7 @@ export default function LoginScreen() {
       } else {
         router.replace('/(tabs)');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       Alert.alert('Login Failed', 'Invalid email or password');
     } finally {
       setLoading(false);
@@ -83,7 +84,7 @@ export default function LoginScreen() {
                 <Ionicons name="sparkles" size={48} color="#0D9488" />
              </View>
             <H1 className="text-center text-slate-800 dark:text-white text-4xl">StamFree</H1>
-            <P className="text-center mt-3 text-slate-600 dark:text-slate-300 text-base">Welcome back! 👋</P>
+            <P className="text-center mt-3 text-slate-600 dark:text-slate-300 text-base">Welcome back!</P>
           </View>
 
           <View className="bg-white/90 dark:bg-slate-900/90 rounded-[40px] px-8 pt-8 pb-10 shadow-2xl mb-6 border-2 border-white/50 dark:border-slate-800/50">

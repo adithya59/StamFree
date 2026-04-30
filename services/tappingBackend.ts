@@ -16,7 +16,6 @@ export interface TappingAnalysisResponse {
     accuracy: number;        // Overall accuracy percentage (0-100)
     feedback: string;        // Feedback message
     transcript?: string;     // STT transcript of what was said
-    pecky_state: 'idle' | 'peck' | 'success' | 'confused'; // State for the woodpecker character
     is_sync: boolean;
     fluent: boolean;
     syllable_matches: boolean[];
@@ -31,13 +30,17 @@ export async function analyzeTappingAudio(
     try {
         const formData = new FormData();
 
-        // Append fields
+        // Determine file extension and MIME type from URI
+        const ext = request.audioUri.split('.').pop()?.toLowerCase() || 'm4a';
+        const mimeType = ext === 'wav' ? 'audio/wav' : 'audio/m4a';
+        const filename = `tapping_session.${ext}`;
+
         // React Native FormData requires a specific object structure for files
         // @ts-ignore - React Native specific type
         formData.append('audio', {
             uri: request.audioUri,
-            name: 'tapping_session.m4a',
-            type: 'audio/m4a',
+            name: filename,
+            type: mimeType,
         });
 
         formData.append('taps', JSON.stringify(request.taps));
@@ -52,16 +55,16 @@ export async function analyzeTappingAudio(
         });
 
         if (!result.ok) {
+            const errorText = await result.text();
+            console.error(`❌ Backend error ${result.status}: ${errorText}`);
             throw new Error(`Backend returned ${result.status}: ${result.statusText}`);
         }
 
         const data = await result.json();
-
         return {
             accuracy: data.accuracy ?? 0,
             feedback: data.feedback || 'Practice makes perfect!',
             transcript: data.transcript,
-            pecky_state: data.pecky_state || 'idle',
             is_sync: data.is_sync ?? false,
             fluent: data.fluent ?? false,
             syllable_matches: data.syllable_matches ?? []

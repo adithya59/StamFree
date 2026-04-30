@@ -1,6 +1,7 @@
 import { auth } from '@/config/firebaseConfig';
 import { router } from 'expo-router';
 import { reload, sendEmailVerification } from 'firebase/auth';
+import { type FirebaseError } from '@/types/shared';
 import React, { useEffect, useState } from 'react';
 import { Alert, View } from 'react-native';
 import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
@@ -42,8 +43,8 @@ export default function EmailVerificationScreen() {
       
       // Re-enable resend after 60 seconds
       setTimeout(() => setResendDisabled(false), 60000);
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to send verification email');
+    } catch (error: unknown) {
+      Alert.alert('Error', (error as FirebaseError).message || 'Failed to send verification email');
       setResendDisabled(false);
     } finally {
       setLoading(false);

@@ -2,14 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, Modal, TouchableOpacity, ScrollView, useColorScheme } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-
-interface PhonemeData {
-  id: string;
-  phoneme: string;
-  tier: number;
-  example: string;
-  category: string;
-}
+import type { PhonemeData } from '@/types/snake';
 
 interface SnakeProgressModalProps {
   visible: boolean;
@@ -75,7 +68,7 @@ export function SnakeProgressModal({
     let data: PhonemeData[] = [];
     let emptyMessage = '';
     let headerBg = '';
-    let iconName: any = 'sound-wave';
+    let iconName: keyof typeof MaterialCommunityIcons.glyphMap = 'music-note';
     let iconColor = '';
 
     switch (viewMode) {

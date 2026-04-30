@@ -80,7 +80,7 @@ export const SNAKE_CONFIG = {
 
   /**
    * Maximum allowed pause duration when allowPauses=true (seconds).
-   * Loaded from Firestore progression_rules per level; this is fallback.
+   * This is the default used; fallback for levels without custom configuration.
    * Related: FR-014, US2 Acceptance Scenario 2
    */
   MAX_PAUSE_DURATION_DEFAULT: 0.5,

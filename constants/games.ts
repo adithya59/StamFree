@@ -1,13 +1,17 @@
+import { type ImageSourcePropType } from 'react-native';
+import LottieView, { type LottieViewProps } from 'lottie-react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+
 export interface GameConfig {
   id: string;
   title: string;
   description: string;
-  iconSource?: any; // require() path
-  iconName?: string; // MaterialCommunityIcons name
-  lottieSource?: any; // Lottie JSON source
+  iconSource?: ImageSourcePropType;
+  iconName?: keyof typeof MaterialCommunityIcons.glyphMap;
+  lottieSource?: LottieViewProps['source'];
   gradientColors: [string, string, ...string[]];
   darkGradientColors: [string, string, ...string[]];
-  route: string;
+  route: string & {};
   type: 'prolongation' | 'blocking' | 'repetition' | 'common';
 }
 

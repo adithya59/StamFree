@@ -14,14 +14,7 @@ import {
 import { LineChart } from 'react-native-chart-kit';
 import { ScreenWrapper } from '@/components/ui/ScreenWrapper';
 import { H1, H2, Label, P } from '@/components/ui/Typography';
-
-interface PhonemeData {
-  id: string;
-  phoneme: string;
-  tier: number;
-  example: string;
-  category: string;
-}
+import type { PhonemeData } from '@/types/snake';
 
 interface UserPlaylist {
   activePhonemes: string[];
@@ -149,7 +142,7 @@ export default function ProgressScreen() {
            
            if (dailyScores[dateStr]) { // Only if within last 7 days
               // Only count sessions that have a defined score for the graph
-              if (data.gameId === 'onetap') {
+              if (data.gameId === 'tapping') {
                 // BUG FIX: data.accuracy is already 0-100, do not multiply by 100 again
                 const score = data.accuracy || 0; 
                 dailyScores[dateStr].total += score;
@@ -169,7 +162,7 @@ export default function ProgressScreen() {
            }
         }
 
-        if (data.gameId === 'onetap') {
+        if (data.gameId === 'tapping') {
           totalWords++;
           totalAccuracySum += data.accuracy || 0;
           if (data.accuracy > bestAccuracy) bestAccuracy = data.accuracy;

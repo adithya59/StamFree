@@ -147,7 +147,7 @@ export default function Demo() {
         uri,
         name: `recording.${fileType}`,
         type: `audio/${fileType}`,
-      } as any);
+      } as unknown as Blob);
 
       const response = await fetch(getAnalyzeAudioUrl(), {
         method: 'POST',

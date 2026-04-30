@@ -1,6 +1,7 @@
 import { getAnalyzeUrl } from '@/config/backend';
-import { createFormData, uploadAudioWithTimeout, type UploadResult } from '@/services/audio';
+import { createFormData, uploadAudioWithTimeout, appendFormDataFields, type UploadResult } from '@/services/audio';
 import { normalizeTurtle, type TurtleResponse, type UnifiedResult } from '@/services/clinicalLogic';
+import type { UploadResult as SharedUploadResult } from '@/types/shared';
 
 export interface TurtleAnalysisResult extends UnifiedResult {
   wpm: number;
@@ -17,15 +18,12 @@ export async function analyzeTurtleAudio(
 ): Promise<TurtleAnalysisResult | null> {
   try {
     const formData = createFormData(audioUri);
-    if (targetText) {
-        formData.append('targetText', targetText);
-    }
-    if (tier !== undefined) {
-        formData.append('tier', tier.toString());
-    }
-    if (requiredPauses !== undefined) {
-        formData.append('requiredPauses', requiredPauses.toString());
-    }
+    
+    appendFormDataFields(formData, {
+      targetText: targetText,
+      tier: tier,
+      requiredPauses: requiredPauses,
+    });
 
     const url = getAnalyzeUrl('turtle');
     const result: UploadResult = await uploadAudioWithTimeout(url, formData, 15000); // 15s timeout for STT
@@ -35,7 +33,7 @@ export async function analyzeTurtleAudio(
       return null;
     }
 
-    const turtleRes = result.json as TurtleResponse;
+    const turtleRes = result.json as unknown as TurtleResponse;
     console.log('[TurtleAnalysis] Backend result:', turtleRes);
     const unified = normalizeTurtle(turtleRes);
 

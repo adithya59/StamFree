@@ -4,10 +4,10 @@
  */
 
 import { analyzeTappingAudio, type TappingAnalysisResponse } from '@/services/tappingBackend';
+import { savePracticeSession } from '@/services/firestore';
 import { Audio } from 'expo-av';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '@/config/firebaseConfig';
+import { auth } from '@/config/firebaseConfig';
 
 export interface TappingSessionState {
     isRecording: boolean;
@@ -71,9 +71,33 @@ export function useTappingSession() {
                 playsInSilentModeIOS: true,
             });
 
-            const { recording } = await Audio.Recording.createAsync(
-                Audio.RecordingOptionsPresets.HIGH_QUALITY
-            );
+            // Configure recording options for proper speech recognition (16kHz, mono)
+            const recordingOptions = {
+                ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+                android: {
+                    ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
+                    extension: '.m4a',
+                    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+                    audioEncoder: Audio.AndroidAudioEncoder.AAC,
+                    sampleRate: 16000, // Match server model (no resampling)
+                    numberOfChannels: 1,
+                    bitRate: 64000,
+                },
+                ios: {
+                    ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+                    extension: '.wav',
+                    outputFormat: Audio.IOSOutputFormat.LINEARPCM,
+                    audioQuality: Audio.IOSAudioQuality.HIGH,
+                    sampleRate: 16000, // Match server model
+                    numberOfChannels: 1,
+                    bitRate: 128000,
+                    linearPCMBitDepth: 16,
+                    linearPCMIsBigEndian: false,
+                    linearPCMIsFloat: false,
+                },
+            };
+
+            const { recording } = await Audio.Recording.createAsync(recordingOptions);
 
             recordingRef.current = recording;
             startTimeRef.current = Date.now();
@@ -133,8 +157,6 @@ export function useTappingSession() {
                 syllables
             });
 
-            console.log('✅ Result:', { accuracy: result.accuracy, feedback: result.feedback, transcript: result.transcript });
-
             setState(prev => ({
                 ...prev,
                 isProcessing: false,
@@ -144,9 +166,7 @@ export function useTappingSession() {
             // Save to Firestore
             if (auth.currentUser) {
                 try {
-                    await addDoc(collection(db, `users/${auth.currentUser.uid}/practice_sessions`), {
-                        gameId: 'onetap',
-                        timestamp: serverTimestamp(),
+                    await savePracticeSession(auth.currentUser.uid, 'tapping', {
                         word: targetWord,
                         tier: tier,
                         accuracy: result.accuracy,
@@ -155,7 +175,6 @@ export function useTappingSession() {
                         syllables: syllables.length,
                         syllable_matches: result.syllable_matches
                     });
-
                 } catch (saveError) {
                     console.error('Failed to save session:', saveError);
                     // Don't fail the UI, just log the error
