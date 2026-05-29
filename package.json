@@ -8,7 +8,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "build": "expo export --platform web",
+    "vercel-build": "npm run build"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -20,6 +22,7 @@
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
+    "eas": "^0.1.0",
     "expo": "~54.0.30",
     "expo-audio": "~1.1.1",
     "expo-av": "^16.0.8",

@@ -35,19 +35,24 @@ yarn-error.*
 .env*
 .local
 server/credentials.json
+
 # typescript
 *.tsbuildinfo
 
-app-example
-
 # generated native folders
 /ios
+
+# misc
+app-example
 .gemini/
 gemini.md
 .specify/
 .vscode/
 specs/
- 
+
 # Wav2Vec model artifacts (do not commit large files)
 server/final_stutter_wav2vec/
 *.safetensors
+
+# Vercel
+.vercel
