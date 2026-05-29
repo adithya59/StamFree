@@ -58,7 +58,7 @@ export default function LoginScreen() {
       const oldSavedType = await AsyncStorage.getItem('stutterType');
 
       if (!savedTypes && !oldSavedType) {
-        router.replace('/detection-intro');
+        router.replace('/demo');
       } else {
         router.replace('/(tabs)');
       }
