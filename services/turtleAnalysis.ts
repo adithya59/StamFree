@@ -16,33 +16,32 @@ export async function analyzeTurtleAudio(
   tier?: number,
   requiredPauses?: number
 ): Promise<TurtleAnalysisResult | null> {
-  try {
-    const formData = createFormData(audioUri);
-    
-    appendFormDataFields(formData, {
-      targetText: targetText,
-      tier: tier,
-      requiredPauses: requiredPauses,
-    });
+  // DEMO MODE: Return mock data without calling backend
+  console.log('[TurtleAnalysis] DEMO MODE - Returning mock analysis result');
+  
+  // Simulate a brief delay to feel like analysis is happening
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
-    const url = getAnalyzeUrl('turtle');
-    const result: UploadResult = await uploadAudioWithTimeout(url, formData, 15000); // 15s timeout for STT
+  // Return WPM within tier range to get "perfect pace" feedback
+  // Tier 1 (Jungle): 40-70 WPM, Tier 2 (River): 60-90 WPM, Tier 3 (Mountain): 80-110 WPM
+  const tierRanges = {
+    1: 55, // Mid-range for Jungle
+    2: 75, // Mid-range for River
+    3: 95, // Mid-range for Mountain
+  };
+  const mockWpm = tierRanges[tier as keyof typeof tierRanges] || 55;
 
-    if (!result.ok || !result.json) {
-      console.error('[TurtleAnalysis] Upload failed:', result.error);
-      return null;
-    }
-
-    const turtleRes = result.json as unknown as TurtleResponse;
-    console.log('[TurtleAnalysis] Backend result:', turtleRes);
-    const unified = normalizeTurtle(turtleRes);
-
-    return {
-      ...unified,
-      wpm: turtleRes.wpm,
-    };
-  } catch (error) {
-    console.error('[TurtleAnalysis] Error:', error);
-    return null;
-  }
+  return {
+    game_pass: true,
+    clinical_pass: true,
+    feedback: '🐢 Wonderful sentence reading! Keep it up!',
+    confidence: 0.88,
+    metrics: {
+      stutteringDetected: false,
+      blockDetected: false,
+      pauseDetected: requiredPauses ? true : false,
+      correctPronunciation: true,
+    },
+    wpm: mockWpm,
+  };
 }

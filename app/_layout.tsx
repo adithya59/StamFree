@@ -48,25 +48,12 @@ export default function RootLayout() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inEmailVerification = segments.join('/').includes('email-verification');
-    const inOnboarding = segments[0] === 'demo';
 
     async function handleRouting() {
       if (user && user.emailVerified) {
-        // Always read AsyncStorage fresh to avoid stale state after onboarding completes
-        const stutterTypes = await AsyncStorage.getItem('stutterTypes');
-        const oldStutterType = await AsyncStorage.getItem('stutterType');
-        const completedOnboarding = !!stutterTypes || !!oldStutterType;
-
         if (inAuthGroup && !inEmailVerification) {
-          // Redirect away from auth screens
-          if (completedOnboarding) {
-            router.replace('/(tabs)');
-          } else {
-            router.replace('/demo');
-          }
-        } else if (!inOnboarding && !completedOnboarding && segments[0] === '(tabs)') {
-          // User trying to access main app but hasn't completed onboarding
-          router.replace('/demo');
+          // Redirect away from auth screens to main app
+          router.replace('/(tabs)');
         }
       } else if (!user && !inAuthGroup) {
         // User is logged out but trying to access protected screens - redirect to login
@@ -102,7 +89,6 @@ export default function RootLayout() {
         <Stack.Screen name="exercises/snake-game" options={{ headerShown: false }} />
         <Stack.Screen name="exercises/tapping-game" options={{ headerShown: false }} />
         <Stack.Screen name="editprofile" options={{ headerShown: false }} />
-        <Stack.Screen name="demo" options={{ headerShown: false }} />
         <Stack.Screen name="index" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />

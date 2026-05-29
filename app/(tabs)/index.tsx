@@ -86,19 +86,7 @@ export default function HomeScreen() {
             </Text>
           </View>
         )}
-        <TouchableOpacity
-          className="mt-4 flex-row items-center space-x-2 rounded-xl bg-teal-50 px-4 py-3 dark:bg-teal-900/30 self-start"
-          onPress={async () => {
-            await AsyncStorage.removeItem('stutterTypes');
-            await AsyncStorage.removeItem('stutterType'); // Remove old format too
-            router.push('/demo');
-          }}
-        >
-          <MaterialCommunityIcons name="refresh" size={20} color="#0D9488" />
-          <Text className="font-semibold text-brand-primary">
-            Retest My Speech
-          </Text>
-        </TouchableOpacity>
+
       </View>
 
       {/* Stats Section */}

@@ -53,15 +53,8 @@ export default function LoginScreen() {
         JSON.stringify({ email: user.email, uid: user.uid })
       );
 
-      // Check both new and old format for onboarding completion
-      const savedTypes = await AsyncStorage.getItem('stutterTypes');
-      const oldSavedType = await AsyncStorage.getItem('stutterType');
-
-      if (!savedTypes && !oldSavedType) {
-        router.replace('/demo');
-      } else {
-        router.replace('/(tabs)');
-      }
+      // Redirect to main app after successful login
+      router.replace('/(tabs)');
     } catch (error: unknown) {
       Alert.alert('Login Failed', 'Invalid email or password');
     } finally {

@@ -228,27 +228,14 @@ export default function TalkingTurtle() {
     }
 
     // CLIENT-SIDE WPM CALCULATION (Quick Pre-Check)
+    // DEMO MODE: Skip WPM validation - always proceed
     const clientResult = calculateSpeakingRate(
       targetItem?.wordCount || 0,
       audioData.duration,
       targetItem?.tier || 1 // Pass the tier (default to 1)
     );
-
-    // Only proceed to server if WPM is in valid range
-    if (clientResult.status !== 'perfect') {
-      // Show feedback visually and speak it
-      setFeedback(clientResult.feedback);
-      Speech.speak(
-        clientResult.feedback
-          .replace(/[\uD800-\uDFFF]/g, '')
-          .replace(/[\u2600-\u27BF]/g, '')
-          .replace(/\s+/g, ' ')
-          .trim(),
-        { rate: 1.0 } // Normal speed for feedback
-      );
-      console.log(`[Turtle] WPM check failed: ${clientResult.wpm} WPM (${clientResult.status})`);
-      return;
-    }
+    console.log(`[Turtle] Client WPM: ${clientResult.wpm} WPM (${clientResult.status}) - DEMO MODE: Skipping validation`);
+    // In demo mode, we skip the WPM check and always proceed to backend analysis
 
     // WPM is in range - proceed to server for final validation
 

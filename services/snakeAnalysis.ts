@@ -106,113 +106,28 @@ export async function analyzeSnakeAudio(
   promptPhoneme?: string,
   tier?: number
 ): Promise<SnakeAnalysisResult | null> {
-  const analysisStartTime = performance.now();
-  let lastError: Error | null = null;
+  // DEMO MODE: Return mock data without calling backend
+  console.log('[SnakeAnalysis] DEMO MODE - Returning mock analysis result');
+  
+  // Simulate a brief delay to feel like analysis is happening
+  await new Promise(resolve => setTimeout(resolve, 800));
 
-  // Attempt with retries
-  for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
-    try {
-      if (attempt > 0) {
-        const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-        console.log(`[SnakeAnalysis] Retry attempt ${attempt + 1} after ${delay}ms delay`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-
-      console.log('[SnakeAnalysis] Starting analysis for', audioUri, `(attempt ${attempt + 1})`);
-      
-      const formData = createFormData(audioUri);
-      
-      // Add game metrics and optional fields
-      appendFormDataFields(formData, {
-        durationAchieved: gameMetrics.durationAchieved,
-        targetDuration: gameMetrics.targetDuration,
-        completionPercentage: gameMetrics.completionPercentage,
-        targetPhoneme: promptPhoneme,
-        tier: tier,
-      });
-      // Use new /snake/analyze endpoint
-      const url = getAnalyzeUrl('snake');
-      
-      // Upload with 10 second timeout
-      const result: UploadResult = await uploadAudioWithTimeout(url, formData, 10000);
-      
-      if (!result.ok || !result.json) {
-        lastError = new Error(result.error || 'Unknown upload error');
-        console.error('[SnakeAnalysis] Upload failed:', lastError.message);
-        continue; // Retry
-      }
-
-      const apiResponse = result.json as unknown as SnakeAPIResponse;
-      console.log('[SnakeAnalysis] Backend result:', apiResponse);
-
-      // Check for API-level errors
-      if (!apiResponse.success || !apiResponse.data) {
-        lastError = new Error(apiResponse.error || 'Analysis failed');
-        console.error('[SnakeAnalysis] API error:', lastError.message);
-        continue; // Retry
-      }
-
-      const data = apiResponse.data;
-      const stars = data.stars;
-
-      // Log to Firestore activity_logs
-      if (auth.currentUser) {
-        try {
-          await saveExerciseAttempt({
-            uid: auth.currentUser.uid,
-            exerciseType: 'snake',
-            gamePass: data.gamePass,
-            clinicalPass: data.clinicalPass,
-            confidence: data.debug.confidence,
-            feedback: data.feedback,
-            metrics: {
-              ...data.metrics,
-              phonemeMatch: data.metrics.phonemeMatch ?? false, // Convert null to false
-              // Include game metrics
-              durationAchieved: gameMetrics.durationAchieved,
-              targetDuration: gameMetrics.targetDuration,
-              completionPercentage: gameMetrics.completionPercentage,
-              pauseCount: gameMetrics.pauseCount,
-              totalPauseDuration: gameMetrics.totalPauseDuration,
-              starsAwarded: stars,
-            },
-          });
-          console.log('[SnakeAnalysis] Logged attempt to Firestore');
-        } catch (logErr) {
-          console.error('[SnakeAnalysis] Failed to log attempt:', logErr);
-          // Don't fail the whole analysis if logging fails
-        }
-      }
-
-      const totalLatency = performance.now() - analysisStartTime;
-      console.log(`[SnakeAnalysis] ✅ Analysis complete in ${totalLatency.toFixed(0)}ms (${attempt + 1} attempt${attempt > 0 ? 's' : ''})`);
-      
-      // Warn if latency exceeds target (5 seconds)
-      if (totalLatency > 5000) {
-        console.warn(`[SnakeAnalysis] ⚠️ AI latency exceeded 5s target: ${totalLatency.toFixed(0)}ms`);
-      }
-
-      return {
-        stars: data.stars,
-        feedback: data.feedback,
-        confidence: data.debug.confidence,
-        metrics: data.metrics as Record<string, number | boolean>,
-        gamePass: data.gamePass,
-        clinicalPass: data.clinicalPass,
-        xp: data.xp,
-      };
-    } catch (error) {
-      lastError = error as Error;
-      console.error(`[SnakeAnalysis] Attempt ${attempt + 1} failed:`, error);
-    }
-  }
-
-  // All retries failed - queue for offline processing
-  const totalLatency = performance.now() - analysisStartTime;
-  console.error(`[SnakeAnalysis] ❌ All retry attempts failed after ${totalLatency.toFixed(0)}ms:`, lastError?.message);
-  await queueOfflineAttempt(audioUri, gameMetrics, promptPhoneme);
-
-  return null;
+  return {
+    stars: 3,
+    feedback: '🎉 Excellent! Great pronunciation!',
+    confidence: 0.92,
+    metrics: {
+      duration: gameMetrics.durationAchieved,
+      continuity: true,
+      phonemeMatch: true,
+      repetition: false,
+      noiseDetected: false,
+      voicedRatio: 0.95,
+    },
+    gamePass: true,
+    clinicalPass: true,
+    xp: 50,
+  };
 }
 
 /**
