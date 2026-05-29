@@ -42,10 +42,8 @@ app-example
 
 # generated native folders
 /ios
-/android
 .gemini/
 gemini.md
-.github/
 .specify/
 .vscode/
 specs/
