@@ -35,7 +35,7 @@ export default function LoginScreen() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      if (!user.emailVerified) {
+      if (false) {
         Alert.alert(
           'Email Not Verified',
           'Please verify your email address before logging in.',
